@@ -111,9 +111,7 @@ function updateCamera(dt) {
   const ratio = player.absSpeed / 280;
   const dist  = 13 + ratio * 4;
   const h     = 5.5 + ratio * 1.8;
-  const latOff = -player.steer * 1.5;
-
-  const tx = player.posX + latOff;
+  const tx = player.posX;
   const ty = h;
   const tz = player.posZ - dist;
 
