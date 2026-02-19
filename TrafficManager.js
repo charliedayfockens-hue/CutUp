@@ -8,9 +8,8 @@ const DESPAWN_BEHIND   = 80;
 const MIN_SPEED        = 60;   // km/h
 const MAX_SPEED        = 120;
 const LANE_CHANGE_P    = 0.003;
-const NEAR_MISS_DIST   = 2.5;  // lateral metres
-const NEAR_MISS_Z      = 5;    // longitudinal metres
-const NEAR_MISS_PTS    = 50;
+const NEAR_MISS_DIST   = 2.5;
+const NEAR_MISS_Z      = 5;
 
 const COLORS = [
   0xff3333, 0x3355ff, 0x33cc55, 0xffee33, 0xff33ff,
@@ -18,17 +17,20 @@ const COLORS = [
   0xff6600, 0x0066ff, 0x00cc44, 0xcc0044
 ];
 
-// Shared geometry/materials
+// Shared geometry (toon materials for DS look)
 const sedanBodyGeo  = new THREE.BoxGeometry(1.9, 0.55, 4.0);
 const sedanCabGeo   = new THREE.BoxGeometry(1.6, 0.45, 1.8);
 const suvBodyGeo    = new THREE.BoxGeometry(2.1, 0.8, 4.5);
 const suvCabGeo     = new THREE.BoxGeometry(1.8, 0.55, 2.2);
 const truckBodyGeo  = new THREE.BoxGeometry(2.2, 1.5, 5.5);
 const wheelGeo      = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 10);
-const wheelMat      = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 });
-const cabMat        = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.15, metalness: 0.7, transparent: true, opacity: 0.6 });
+const wheelMat      = new THREE.MeshToonMaterial({ color: 0x222222 });
+const cabMat        = new THREE.MeshToonMaterial({ color: 0x334455, transparent: true, opacity: 0.6 });
 const tlGeo         = new THREE.BoxGeometry(0.2, 0.1, 0.05);
-const tlMat         = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.3 });
+const tlMat         = new THREE.MeshToonMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.3 });
+
+// Outline material for cel-shaded look
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
 
 function randomColor() {
   return COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -39,14 +41,10 @@ export class TrafficManager {
     this.scene = scene;
     this.pool = [];
     this.spawnAccum = 0;
-
-    // Scoring callback (set from outside)
     this.onNearMiss = null;
-
     this._buildPool();
   }
 
-  // ---- Build object pool ----
   _buildPool() {
     for (let i = 0; i < POOL_SIZE; i++) {
       const car = this._createCar();
@@ -60,7 +58,7 @@ export class TrafficManager {
         nearMissCounted: false,
         halfW: 0.95,
         halfL: 2.0,
-        bodyMesh: car.children[0] // first child is the body mesh
+        bodyMesh: car.children[0]
       };
       this.pool.push(car);
       this.scene.add(car);
@@ -74,10 +72,15 @@ export class TrafficManager {
 
     if (t < 0.5) {
       // Sedan
-      const body = new THREE.Mesh(sedanBodyGeo, new THREE.MeshStandardMaterial({ color: col, roughness: 0.35, metalness: 0.6 }));
+      const body = new THREE.Mesh(sedanBodyGeo, new THREE.MeshToonMaterial({ color: col }));
       body.position.y = 0.5;
       body.castShadow = true;
       g.add(body);
+      // Outline
+      const outline = new THREE.Mesh(sedanBodyGeo, outlineMat.clone());
+      outline.position.y = 0.5;
+      outline.scale.multiplyScalar(1.04);
+      g.add(outline);
       const cab = new THREE.Mesh(sedanCabGeo, cabMat);
       cab.position.set(0, 0.97, -0.2);
       g.add(cab);
@@ -85,10 +88,14 @@ export class TrafficManager {
       g.userData.halfW = 0.95;
     } else if (t < 0.8) {
       // SUV
-      const body = new THREE.Mesh(suvBodyGeo, new THREE.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.5 }));
+      const body = new THREE.Mesh(suvBodyGeo, new THREE.MeshToonMaterial({ color: col }));
       body.position.y = 0.65;
       body.castShadow = true;
       g.add(body);
+      const outline = new THREE.Mesh(suvBodyGeo, outlineMat.clone());
+      outline.position.y = 0.65;
+      outline.scale.multiplyScalar(1.04);
+      g.add(outline);
       const cab = new THREE.Mesh(suvCabGeo, cabMat);
       cab.position.set(0, 1.3, -0.3);
       g.add(cab);
@@ -96,10 +103,14 @@ export class TrafficManager {
       g.userData.halfW = 1.05;
     } else {
       // Truck
-      const body = new THREE.Mesh(truckBodyGeo, new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, metalness: 0.3 }));
+      const body = new THREE.Mesh(truckBodyGeo, new THREE.MeshToonMaterial({ color: col }));
       body.position.y = 0.95;
       body.castShadow = true;
       g.add(body);
+      const outline = new THREE.Mesh(truckBodyGeo, outlineMat.clone());
+      outline.position.y = 0.95;
+      outline.scale.multiplyScalar(1.04);
+      g.add(outline);
       g.userData.halfL = 2.75;
       g.userData.halfW = 1.1;
     }
@@ -122,7 +133,6 @@ export class TrafficManager {
     return g;
   }
 
-  // ---- Spawn ----
   _getInactive() {
     for (const c of this.pool) if (!c.userData.active) return c;
     return null;
@@ -141,7 +151,6 @@ export class TrafficManager {
     const x = laneToX(lane);
     const z = playerZ + SPAWN_AHEAD + Math.random() * 100;
 
-    // Overlap check
     for (const o of this.pool) {
       if (o.userData.active && Math.abs(o.position.z - z) < 10 && Math.abs(o.position.x - x) < 3) return;
     }
@@ -156,14 +165,11 @@ export class TrafficManager {
     car.position.set(x, 0, z);
     car.rotation.set(0, 0, 0);
 
-    // Recolor
     const nc = randomColor();
     car.children[0].material.color.setHex(nc);
   }
 
-  // ---- Update ----
   update(dt, playerX, playerZ, playerSpeed, distanceTraveled) {
-    // Periodic spawning
     this.spawnAccum += dt;
     if (this.spawnAccum > 0.3) {
       this._spawn(playerZ, distanceTraveled);
@@ -174,10 +180,8 @@ export class TrafficManager {
       if (!car.userData.active) continue;
       const d = car.userData;
 
-      // Move
       car.position.z += (d.speed / 3.6) * dt;
 
-      // Lane-change AI
       d.lcTimer -= dt;
       if (d.lcTimer <= 0 && Math.random() < LANE_CHANGE_P) {
         const dir = Math.random() < 0.5 ? -1 : 1;
@@ -195,19 +199,16 @@ export class TrafficManager {
         }
       }
 
-      // Smooth lateral
       const tx = laneToX(d.targetLane);
       car.position.x += (tx - car.position.x) * dt * 2.5;
       if (Math.abs(car.position.x - tx) < 0.1) d.lane = d.targetLane;
 
-      // Despawn
       if (car.position.z < playerZ - DESPAWN_BEHIND) {
         car.visible = false;
         d.active = false;
         continue;
       }
 
-      // Near-miss
       if (!d.nearMissCounted) {
         const dx = Math.abs(car.position.x - playerX);
         const dz = Math.abs(car.position.z - playerZ);
@@ -219,7 +220,6 @@ export class TrafficManager {
     }
   }
 
-  // ---- Collision check ----
   checkCollision(px, pz, pHalfW, pHalfL) {
     for (const car of this.pool) {
       if (!car.userData.active) continue;
@@ -234,7 +234,6 @@ export class TrafficManager {
     return false;
   }
 
-  // ---- Reset ----
   reset() {
     for (const car of this.pool) {
       car.visible = false;

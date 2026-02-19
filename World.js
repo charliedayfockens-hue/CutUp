@@ -78,9 +78,9 @@ const THEMES = {
 
 // Cycle order for dynamic mode
 const DYNAMIC_ORDER = ['day', 'snow', 'desert', 'rain'];
-const DYNAMIC_INTERVAL = 60; // seconds per theme
+const DYNAMIC_INTERVAL = 60;
 
-// ---- Shared geometries (created once) ----
+// ---- Shared geometries ----
 const roadGeo    = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LEN);
 const dashGeo    = new THREE.PlaneGeometry(0.15, 3);
 const solidGeo   = new THREE.PlaneGeometry(0.2, SEGMENT_LEN);
@@ -88,14 +88,14 @@ const barrierGeo = new THREE.BoxGeometry(0.3, 0.8, SEGMENT_LEN);
 const poleGeo    = new THREE.CylinderGeometry(0.08, 0.08, 6, 6);
 const lampGeo    = new THREE.SphereGeometry(0.25, 6, 6);
 
-// ---- Shared materials (mutated by theme) ----
-const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.85 });
-const dashMat    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-const yellowMat  = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
-const edgeMat    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-const barrierMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.4 });
-const poleMat    = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5 });
-const lampMat    = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
+// ---- Toon materials for DS look ----
+const asphaltMat = new THREE.MeshToonMaterial({ color: 0x333338 });
+const dashMat    = new THREE.MeshToonMaterial({ color: 0xffffff });
+const yellowMat  = new THREE.MeshToonMaterial({ color: 0xffcc00 });
+const edgeMat    = new THREE.MeshToonMaterial({ color: 0xffffff });
+const barrierMat = new THREE.MeshToonMaterial({ color: 0x888888 });
+const poleMat    = new THREE.MeshToonMaterial({ color: 0x666666 });
+const lampMat    = new THREE.MeshToonMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
 
 export class World {
   constructor(scene) {
@@ -106,7 +106,6 @@ export class World {
     this.hemiLight = null;
     this.fog = null;
 
-    // Theme state
     this.theme = 'day';
     this._dynamicTimer = 0;
     this._dynamicIndex = 0;
@@ -115,7 +114,6 @@ export class World {
     this._buildSegmentPool();
   }
 
-  // ---- Lighting ----
   _buildLighting() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(this.ambientLight);
@@ -139,7 +137,6 @@ export class World {
     this.scene.background = new THREE.Color(0x87CEEB);
   }
 
-  // ---- Road segment pool ----
   _buildSegmentPool() {
     for (let i = 0; i < SEGMENT_POOL; i++) {
       const seg = this._createSegment();
@@ -213,7 +210,6 @@ export class World {
     return g;
   }
 
-  // ---- Recycle segments ----
   update(playerZ) {
     for (const seg of this.segments) {
       if (seg.position.z < playerZ - SEGMENT_LEN * 2) {
@@ -226,7 +222,6 @@ export class World {
     }
   }
 
-  // ---- Reset segments back to origin (fixes "Try Again" vanishing road) ----
   reset() {
     for (let i = 0; i < this.segments.length; i++) {
       this.segments[i].position.z = i * SEGMENT_LEN;
@@ -235,7 +230,6 @@ export class World {
     this._dynamicIndex = 0;
   }
 
-  // ---- Theme system ----
   setTheme(name) {
     this.theme = name;
     if (name === 'dynamic') {
@@ -248,12 +242,10 @@ export class World {
   }
 
   _applyThemeConfig(cfg) {
-    // Sky + fog
     this.scene.background.setHex(cfg.sky);
     this.fog.color.setHex(cfg.fogColor);
     this.fog.density = cfg.fogDensity;
 
-    // Lights
     this.sunLight.color.setHex(cfg.sunColor);
     this.sunLight.intensity = cfg.sunIntensity;
     this.ambientLight.intensity = cfg.ambientIntensity;
@@ -261,14 +253,10 @@ export class World {
     this.hemiLight.groundColor.setHex(cfg.hemiGround);
     this.hemiLight.intensity = cfg.hemiIntensity;
 
-    // Road material
     asphaltMat.color.setHex(cfg.road);
-    asphaltMat.roughness = cfg.roadRough;
-    asphaltMat.metalness = cfg.roadMetal;
     asphaltMat.needsUpdate = true;
   }
 
-  // ---- Per-frame theme update (handles dynamic transitions) ----
   updateTheme(dt, renderer) {
     if (this.theme === 'dynamic') {
       this._dynamicTimer += dt;
@@ -277,16 +265,13 @@ export class World {
         this._dynamicIndex = (this._dynamicIndex + 1) % DYNAMIC_ORDER.length;
       }
 
-      // Lerp toward current target theme
       const target = THEMES[DYNAMIC_ORDER[this._dynamicIndex]];
-      const t = Math.min(1, dt * 2); // transition speed
+      const t = Math.min(1, dt * 2);
 
-      // Lerp sky/fog color
       this.scene.background.lerp(new THREE.Color(target.sky), t);
       this.fog.color.lerp(new THREE.Color(target.fogColor), t);
       this.fog.density += (target.fogDensity - this.fog.density) * t;
 
-      // Lerp lights
       this.sunLight.color.lerp(new THREE.Color(target.sunColor), t);
       this.sunLight.intensity += (target.sunIntensity - this.sunLight.intensity) * t;
       this.ambientLight.intensity += (target.ambientIntensity - this.ambientLight.intensity) * t;
@@ -294,20 +279,15 @@ export class World {
       this.hemiLight.groundColor.lerp(new THREE.Color(target.hemiGround), t);
       this.hemiLight.intensity += (target.hemiIntensity - this.hemiLight.intensity) * t;
 
-      // Lerp road material
       asphaltMat.color.lerp(new THREE.Color(target.road), t);
-      asphaltMat.roughness += (target.roadRough - asphaltMat.roughness) * t;
-      asphaltMat.metalness += (target.roadMetal - asphaltMat.metalness) * t;
 
       renderer.toneMappingExposure += (target.exposure - renderer.toneMappingExposure) * t;
     } else {
-      // Static theme — just maintain exposure
       const cfg = THEMES[this.theme] || THEMES.day;
       renderer.toneMappingExposure = cfg.exposure;
     }
   }
 
-  // Follow player for shadows
   followPlayer(px, pz) {
     this.sunLight.target.position.set(px, 0, pz);
     this.sunLight.position.x = px + 40;

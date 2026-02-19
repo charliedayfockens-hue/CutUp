@@ -14,47 +14,84 @@
   </script>
 </head>
 <body>
-  <!-- Start Screen with Map Selection -->
+  <!-- CRT Scanline overlay (always on top for retro feel) -->
+  <div id="crt-overlay"></div>
+
+  <!-- ====== START SCREEN — Multi-Stage Menu ====== -->
   <div id="start-screen">
-    <h1>CUTUP</h1>
-    <p class="subtitle">HIGHWAY TRAFFIC RACING</p>
-    <div class="controls-info">
-      <kbd>W</kbd> / <kbd>&uarr;</kbd> Accelerate
-      <kbd>S</kbd> / <kbd>&darr;</kbd> Brake<br>
-      <kbd>A</kbd> / <kbd>&larr;</kbd> Left
-      <kbd>D</kbd> / <kbd>&rarr;</kbd> Right
-      <kbd>Space</kbd> Brake
+
+    <!-- Stage 1: Main -->
+    <div id="stage-main" class="menu-stage">
+      <h1>CUTUP</h1>
+      <p class="subtitle">HIGHWAY TRAFFIC RACING</p>
+      <div class="controls-info">
+        <kbd>W</kbd> / <kbd>&uarr;</kbd> Accelerate
+        <kbd>Space</kbd> Brake<br>
+        <kbd>A</kbd> / <kbd>&larr;</kbd> Left
+        <kbd>D</kbd> / <kbd>&rarr;</kbd> Right
+      </div>
+      <button id="btn-play" class="big-btn">PLAY</button>
     </div>
-    <p class="map-label">SELECT MAP</p>
-    <div id="map-select">
-      <button class="theme-btn" data-theme="day">
-        <span class="theme-icon">&#9728;</span>
-        <span class="theme-name">Day</span>
-      </button>
-      <button class="theme-btn" data-theme="snow">
-        <span class="theme-icon">&#10052;</span>
-        <span class="theme-name">Snow</span>
-      </button>
-      <button class="theme-btn" data-theme="desert">
-        <span class="theme-icon">&#9788;</span>
-        <span class="theme-name">Desert</span>
-      </button>
-      <button class="theme-btn" data-theme="rain">
-        <span class="theme-icon">&#9748;</span>
-        <span class="theme-name">Rain</span>
-      </button>
-      <button class="theme-btn" data-theme="dynamic">
-        <span class="theme-icon">&#8635;</span>
-        <span class="theme-name">Dynamic</span>
-      </button>
+
+    <!-- Stage 2: Map Select -->
+    <div id="stage-map" class="menu-stage" style="display:none">
+      <h2 class="stage-title">SELECT MAP</h2>
+      <div class="btn-grid">
+        <button class="map-btn pixel-btn" data-theme="snow">
+          <span class="btn-icon">&#10052;</span>
+          <span class="btn-label">Snow</span>
+        </button>
+        <button class="map-btn pixel-btn" data-theme="desert">
+          <span class="btn-icon">&#9788;</span>
+          <span class="btn-label">Desert</span>
+        </button>
+        <button class="map-btn pixel-btn" data-theme="rain">
+          <span class="btn-icon">&#9748;</span>
+          <span class="btn-label">Rain</span>
+        </button>
+        <button class="map-btn pixel-btn" data-theme="dynamic">
+          <span class="btn-icon">&#8635;</span>
+          <span class="btn-label">Dynamic</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stage 3: Car Color Select -->
+    <div id="stage-car" class="menu-stage" style="display:none">
+      <h2 class="stage-title">SELECT CAR</h2>
+      <div class="btn-grid">
+        <button class="car-btn pixel-btn" data-color="green">
+          <span class="color-swatch" style="background:#33cc55"></span>
+          <span class="btn-label">Green</span>
+        </button>
+        <button class="car-btn pixel-btn" data-color="yellow">
+          <span class="color-swatch" style="background:#ffdd00"></span>
+          <span class="btn-label">Yellow</span>
+        </button>
+        <button class="car-btn pixel-btn" data-color="red">
+          <span class="color-swatch" style="background:#ff2200"></span>
+          <span class="btn-label">Red</span>
+        </button>
+        <button class="car-btn pixel-btn" data-color="blue">
+          <span class="color-swatch" style="background:#3366ff"></span>
+          <span class="btn-label">Blue</span>
+        </button>
+        <button class="car-btn pixel-btn" data-color="rainbow">
+          <span class="color-swatch rainbow-swatch"></span>
+          <span class="btn-label">Rainbow</span>
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Game Over Screen -->
+  <!-- ====== Game Over Screen (Stage 4) ====== -->
   <div id="game-over">
     <h2>WRECKED</h2>
     <p class="final-score">Score: <span id="final-score-value">0</span></p>
-    <button id="restart-btn">TRY AGAIN</button>
+    <div class="go-buttons">
+      <button id="retry-btn" class="go-btn">RETRY</button>
+      <button id="mainmenu-btn" class="go-btn secondary">MAIN MENU</button>
+    </div>
   </div>
 
   <!-- HUD -->

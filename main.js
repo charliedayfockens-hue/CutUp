@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { World } from './World.js';
-import { CarController } from './CarController.js';
+import { CarController, BINDINGS } from './CarController.js';
 import { TrafficManager } from './TrafficManager.js';
 import { Menu } from './Menu.js';
 
@@ -14,22 +14,50 @@ let nearMissCombo = 0;
 let nearMissTimer = 0;
 let screenShake = 0;
 
+// Current selections (persisted for Retry)
+let currentTheme = 'day';
+let currentCar = 'green';
+
 // ============================================================
-//  INPUT
+//  INPUT — Direct Mapping via BINDINGS
 // ============================================================
-const keys = {};
+const keysDown = {};
 const touch = { left: false, right: false, gas: false, brake: false };
 
-document.addEventListener('keydown', e => { keys[e.code] = true; });
-document.addEventListener('keyup',   e => { keys[e.code] = false; });
+document.addEventListener('keydown', e => { keysDown[e.code] = true; keysDown[e.key.toLowerCase()] = true; });
+document.addEventListener('keyup',   e => { keysDown[e.code] = false; keysDown[e.key.toLowerCase()] = false; });
 
 function getInput() {
-  return {
-    gas:   keys['KeyW'] || keys['ArrowUp']    || touch.gas,
-    brake: keys['KeyS'] || keys['ArrowDown']  || keys['Space'] || touch.brake,
-    left:  keys['KeyA'] || keys['ArrowLeft']  || touch.left,
-    right: keys['KeyD'] || keys['ArrowRight'] || touch.right,
-  };
+  const gas   = keysDown['KeyW'] || keysDown['ArrowUp'] || touch.gas;
+  // Spacebar is the only brake input (no S/ArrowDown for brake)
+  const brake = keysDown['Space'] || touch.brake;
+
+  // Direct mapping: look up each binding key to get move direction + wheel angle
+  let moveDir = 0;
+  let wheelAngle = 0;
+
+  for (const [key, cfg] of Object.entries(BINDINGS)) {
+    if (keysDown[key]) {
+      moveDir += cfg.move;
+      wheelAngle += cfg.wheel;
+    }
+  }
+
+  // Also support arrow keys with same mapping as a/d
+  if (keysDown['ArrowLeft'] || touch.left) {
+    moveDir += BINDINGS['a'].move;
+    wheelAngle += BINDINGS['a'].wheel;
+  }
+  if (keysDown['ArrowRight'] || touch.right) {
+    moveDir += BINDINGS['d'].move;
+    wheelAngle += BINDINGS['d'].wheel;
+  }
+
+  // Clamp
+  moveDir = Math.max(-1, Math.min(1, moveDir));
+  wheelAngle = Math.max(-30, Math.min(30, wheelAngle));
+
+  return { gas, brake, moveDir, wheelAngle };
 }
 
 // Mobile touch
@@ -57,27 +85,26 @@ const dom = {
 };
 
 // ============================================================
-//  THREE.JS SETUP
+//  THREE.JS SETUP — Low-res pixelated renderer (DS style)
 // ============================================================
+const RENDER_W = 640;
+const RENDER_H = 360;
+
 const canvas = document.getElementById('gameCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+renderer.setSize(RENDER_W, RENDER_H, false);   // false = don't set CSS size
+renderer.setPixelRatio(1);                       // Force 1:1 pixel mapping
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
 const scene  = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 1000);
-camera.position.set(0, 8, -14);
-camera.lookAt(0, 0, 20);
+const camera = new THREE.PerspectiveCamera(65, RENDER_W / RENDER_H, 0.5, 1000);
+camera.position.set(0, 3, -7);
+camera.lookAt(0, 0, 10);
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// No resize needed for fixed-resolution rendering — CSS handles scaling
 
 // ============================================================
 //  CREATE GAME OBJECTS
@@ -86,8 +113,38 @@ const world   = new World(scene);
 const player  = new CarController(scene);
 const traffic = new TrafficManager(scene);
 
+// ============================================================
+//  DEMO MODE — auto-driving car shown behind menu
+// ============================================================
+let demoActive = true;
+
+function updateDemo(dt) {
+  // Simulate gas input
+  const demoInput = { gas: true, brake: false, moveDir: 0, wheelAngle: 0 };
+
+  // Gently weave between lanes
+  const t = performance.now() * 0.001;
+  const weave = Math.sin(t * 0.4) * 0.3;
+  demoInput.moveDir = weave;
+  demoInput.wheelAngle = weave * 15;
+
+  player.update(dt, demoInput);
+
+  const ms = player.absSpeed / 3.6;
+  world.update(player.posZ);
+  world.updateTheme(dt, renderer);
+  world.followPlayer(player.posX, player.posZ);
+
+  // Spawn some traffic for visual interest
+  traffic.update(dt, player.posX, player.posZ, player.absSpeed, ms * dt);
+
+  // Camera follows but at demo angle
+  updateCamera(dt);
+}
+
 // Near-miss callback
 traffic.onNearMiss = () => {
+  if (state !== 'playing') return;
   if (nearMissTimer > 0) nearMissCombo++; else nearMissCombo = 1;
   nearMissTimer = 3;
   const bonus = 50 * nearMissCombo;
@@ -102,12 +159,12 @@ traffic.onNearMiss = () => {
 };
 
 // ============================================================
-//  CAMERA CONTROLLER
+//  CAMERA CONTROLLER — Close DS-style (0, 3, 7)
 // ============================================================
 function updateCamera(dt) {
   const ratio = player.absSpeed / 280;
-  const dist  = 13 + ratio * 4;
-  const h     = 5.5 + ratio * 1.8;
+  const dist  = 7 + ratio * 3;     // 7m to 10m back (much closer)
+  const h     = 3 + ratio * 1;     // 3m to 4m up
   const tx = player.posX;
   const ty = h;
   const tz = player.posZ - dist;
@@ -125,8 +182,8 @@ function updateCamera(dt) {
     if (screenShake < 0.01) screenShake = 0;
   }
 
-  // Look ahead
-  camera.lookAt(player.posX, 1.5, player.posZ + 18 + ratio * 22);
+  // Look ahead (closer)
+  camera.lookAt(player.posX, 1.2, player.posZ + 12 + ratio * 14);
 
   // Speed FOV
   const targetFov = 65 + ratio * 15;
@@ -145,19 +202,34 @@ function updateHUD() {
 // ============================================================
 //  GAME FLOW
 // ============================================================
-function startGame(theme) {
+function startGame(theme, carColor) {
+  currentTheme = theme;
+  currentCar = carColor || 'green';
+
   dom.startScreen.style.display = 'none';
   dom.hud.style.display = 'block';
   world.setTheme(theme);
+  player.setColor(currentCar);
   resetGame();
+  demoActive = false;
   state = 'playing';
 }
 
-function restartGame() {
+function retryGame() {
   dom.gameOver.style.display = 'none';
   dom.hud.style.display = 'block';
   resetGame();
   state = 'playing';
+}
+
+function goToMainMenu() {
+  dom.gameOver.style.display = 'none';
+  dom.hud.style.display = 'none';
+  resetGame();
+  demoActive = true;
+  state = 'menu';
+  world.setTheme('day');
+  menu.show();
 }
 
 function resetGame() {
@@ -168,8 +240,8 @@ function resetGame() {
   screenShake = 0;
   player.reset();
   traffic.reset();
-  world.reset();                       // <-- fixes "Try Again" vanishing road
-  camera.position.set(player.posX, 8, player.posZ - 14);
+  world.reset();
+  camera.position.set(player.posX, 3, player.posZ - 7);
   camera.fov = 65;
   camera.updateProjectionMatrix();
 }
@@ -184,12 +256,11 @@ function crash() {
 // ============================================================
 //  MENU
 // ============================================================
-// The map-selection overlay is shown first; once a theme is picked,
-// it hides and calls startGame(theme).
 const menu = new Menu(startGame);
 
-// "Try Again" goes straight back without re-showing map select
-document.getElementById('restart-btn').addEventListener('click', restartGame);
+// Game Over buttons
+document.getElementById('retry-btn').addEventListener('click', retryGame);
+document.getElementById('mainmenu-btn').addEventListener('click', goToMainMenu);
 
 // ============================================================
 //  MAIN LOOP
@@ -200,7 +271,10 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (state === 'playing') {
+  if (state === 'menu') {
+    // Demo mode: auto-drive behind the menu
+    updateDemo(dt);
+  } else if (state === 'playing') {
     // Player
     player.update(dt, getInput());
 
