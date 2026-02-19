@@ -17,6 +17,7 @@ let screenShake = 0;
 // Current selections (persisted for Retry)
 let currentTheme = 'day';
 let currentCar = '#33cc55';
+let currentVehicle = 'sports';
 
 // ============================================================
 //  INPUT — Direct Mapping via BINDINGS
@@ -29,10 +30,8 @@ document.addEventListener('keyup',   e => { keysDown[e.code] = false; keysDown[e
 
 function getInput() {
   const gas   = keysDown['KeyW'] || keysDown['ArrowUp'] || touch.gas;
-  // Spacebar is the only brake input
   const brake = keysDown['Space'] || touch.brake;
 
-  // Direct mapping: look up each binding key to get move direction + wheel angle
   let moveDir = 0;
   let wheelAngle = 0;
 
@@ -43,7 +42,6 @@ function getInput() {
     }
   }
 
-  // Arrow keys mirror a/d bindings
   if (keysDown['ArrowLeft'] || touch.left) {
     moveDir += BINDINGS['a'].move;
     wheelAngle += BINDINGS['a'].wheel;
@@ -125,6 +123,7 @@ function updateDemo(dt) {
   world.update(player.posZ);
   world.updateTheme(dt, renderer);
   world.updateWeather(dt, player.posX, player.posZ);
+  world.updateClouds(dt, player.posZ);
   world.followPlayer(player.posX, player.posZ);
 
   traffic.update(dt, player.posX, player.posZ, player.absSpeed, 0);
@@ -149,25 +148,21 @@ traffic.onNearMiss = () => {
 };
 
 // ============================================================
-//  CAMERA CONTROLLER — Clamped zoom at high speed
-//  Resting: dist=7, h=3.  Max pullback capped at +2 Z, +0.8 Y.
+//  CAMERA — Fixed distance (Z=7, Y=3) + speed-based sway
 // ============================================================
-const CAM_REST_DIST = 7;
-const CAM_REST_H   = 3;
-const CAM_MAX_EXTRA_DIST = 2;   // max Z pullback beyond resting
-const CAM_MAX_EXTRA_H    = 0.8; // max Y rise beyond resting
-const CAM_MAX_FOV  = 72;        // cap from base 65
+const CAM_DIST = 7;
+const CAM_H    = 3;
+const MAX_SPEED = 280;
 
 function updateCamera(dt) {
-  const ratio = player.absSpeed / 280;
+  const speedRatio = player.absSpeed / MAX_SPEED;
 
-  // Clamped offsets: Math.min ensures we never exceed the cap
-  const dist = CAM_REST_DIST + Math.min(ratio * 3, CAM_MAX_EXTRA_DIST);
-  const h    = CAM_REST_H   + Math.min(ratio * 1, CAM_MAX_EXTRA_H);
+  // Sway: subtle sine on X proportional to speed
+  const sway = Math.sin(Date.now() * 0.005) * speedRatio * 0.5;
 
-  const tx = player.posX;
-  const ty = h;
-  const tz = player.posZ - dist;
+  const tx = player.posX + sway;
+  const ty = CAM_H;
+  const tz = player.posZ - CAM_DIST;
 
   const s = 4 * dt;
   camera.position.x += (tx - camera.position.x) * s;
@@ -182,12 +177,11 @@ function updateCamera(dt) {
     if (screenShake < 0.01) screenShake = 0;
   }
 
-  // Look ahead (closer feel)
-  camera.lookAt(player.posX, 1.2, player.posZ + 12 + ratio * 14);
+  // Fixed look-ahead
+  camera.lookAt(player.posX, 1.2, player.posZ + 16);
 
-  // Clamped FOV
-  const targetFov = Math.min(65 + ratio * 15, CAM_MAX_FOV);
-  camera.fov += (targetFov - camera.fov) * dt * 2;
+  // Fixed FOV — no speed zoom
+  camera.fov = 65;
   camera.updateProjectionMatrix();
 }
 
@@ -202,13 +196,15 @@ function updateHUD() {
 // ============================================================
 //  GAME FLOW
 // ============================================================
-function startGame(theme, carColor) {
+function startGame(theme, carColor, vehicleType) {
   currentTheme = theme;
   currentCar = carColor || '#33cc55';
+  currentVehicle = vehicleType || 'sports';
 
   dom.startScreen.style.display = 'none';
   dom.hud.style.display = 'block';
   world.setTheme(theme);
+  player.setVehicle(currentVehicle);
   player.setColor(currentCar);
   resetGame();
   state = 'playing';
@@ -239,7 +235,7 @@ function resetGame() {
   player.reset();
   traffic.reset();
   world.reset();
-  camera.position.set(player.posX, CAM_REST_H, player.posZ - CAM_REST_DIST);
+  camera.position.set(player.posX, CAM_H, player.posZ - CAM_DIST);
   camera.fov = 65;
   camera.updateProjectionMatrix();
 }
@@ -287,13 +283,14 @@ function animate() {
     world.update(player.posZ);
     world.updateTheme(dt, renderer);
     world.updateWeather(dt, player.posX, player.posZ);
+    world.updateClouds(dt, player.posZ);
     world.followPlayer(player.posX, player.posZ);
 
     // Traffic
     traffic.update(dt, player.posX, player.posZ, player.absSpeed, distance);
 
-    // Collision
-    if (traffic.checkCollision(player.posX, player.posZ, 1.0, 2.1)) {
+    // Collision — uses per-vehicle hitbox dimensions
+    if (traffic.checkCollision(player.posX, player.posZ, player.halfW, player.halfL)) {
       crash();
     }
 

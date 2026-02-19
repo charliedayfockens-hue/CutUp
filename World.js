@@ -25,8 +25,6 @@ const THEMES = {
     hemiGround: 0xffffff,
     hemiIntensity: 0.4,
     road:       0x6a6a70,
-    roadRough:  0.7,
-    roadMetal:  0.15,
     exposure:   0.9,
     weather:    'snow',
   },
@@ -41,8 +39,6 @@ const THEMES = {
     hemiGround: 0xc8a060,
     hemiIntensity: 0.45,
     road:       0x555550,
-    roadRough:  0.9,
-    roadMetal:  0.05,
     exposure:   1.1,
     weather:    'none',
   },
@@ -57,8 +53,6 @@ const THEMES = {
     hemiGround: 0x333344,
     hemiIntensity: 0.3,
     road:       0x222228,
-    roadRough:  0.2,
-    roadMetal:  0.6,
     exposure:   0.65,
     weather:    'rain',
   },
@@ -73,14 +67,11 @@ const THEMES = {
     hemiGround: 0x555555,
     hemiIntensity: 0.4,
     road:       0x333338,
-    roadRough:  0.85,
-    roadMetal:  0.1,
     exposure:   1.0,
     weather:    'none',
   },
 };
 
-// Cycle order for dynamic mode
 const DYNAMIC_ORDER = ['day', 'snow', 'desert', 'rain'];
 const DYNAMIC_INTERVAL = 60;
 
@@ -92,7 +83,7 @@ const barrierGeo = new THREE.BoxGeometry(0.3, 0.8, SEGMENT_LEN);
 const poleGeo    = new THREE.CylinderGeometry(0.08, 0.08, 6, 6);
 const lampGeo    = new THREE.SphereGeometry(0.25, 6, 6);
 
-// ---- Toon materials for DS look ----
+// ---- Toon materials ----
 const asphaltMat = new THREE.MeshToonMaterial({ color: 0x333338 });
 const dashMat    = new THREE.MeshToonMaterial({ color: 0xffffff });
 const yellowMat  = new THREE.MeshToonMaterial({ color: 0xffcc00 });
@@ -100,6 +91,7 @@ const edgeMat    = new THREE.MeshToonMaterial({ color: 0xffffff });
 const barrierMat = new THREE.MeshToonMaterial({ color: 0x888888 });
 const poleMat    = new THREE.MeshToonMaterial({ color: 0x666666 });
 const lampMat    = new THREE.MeshToonMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
+const cloudMat   = new THREE.MeshToonMaterial({ color: 0xeeeeee });
 
 // ============================================================
 //  WEATHER PARTICLE SYSTEMS
@@ -109,9 +101,9 @@ const PARTICLE_COUNT = 3000;
 function createSnowParticles() {
   const positions = new Float32Array(PARTICLE_COUNT * 3);
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    positions[i * 3]     = (Math.random() - 0.5) * 80;   // X spread
-    positions[i * 3 + 1] = Math.random() * 40;            // Y height
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 120;  // Z spread
+    positions[i * 3]     = (Math.random() - 0.5) * 80;
+    positions[i * 3 + 1] = Math.random() * 40;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -126,6 +118,7 @@ function createSnowParticles() {
 }
 
 function createRainParticles() {
+  // Rain uses elongated vertical streaks via size + sizeAttenuation
   const positions = new Float32Array(PARTICLE_COUNT * 3);
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     positions[i * 3]     = (Math.random() - 0.5) * 80;
@@ -134,14 +127,61 @@ function createRainParticles() {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  // Create a streak texture procedurally on a canvas
+  const texCanvas = document.createElement('canvas');
+  texCanvas.width = 4;
+  texCanvas.height = 32;
+  const ctx = texCanvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 32);
+  grad.addColorStop(0, 'rgba(180,200,220,0)');
+  grad.addColorStop(0.3, 'rgba(180,200,220,0.7)');
+  grad.addColorStop(1, 'rgba(180,200,220,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 4, 32);
+  const streakTex = new THREE.CanvasTexture(texCanvas);
+
   const mat = new THREE.PointsMaterial({
-    color: 0xaabbcc,
-    size: 0.15,
+    map: streakTex,
+    size: 1.2,
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.55,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   return new THREE.Points(geo, mat);
+}
+
+// ============================================================
+//  PROCEDURAL CLOUDS
+// ============================================================
+const CLOUD_COUNT = 18;
+const CLOUD_SPREAD_X = 120;
+const CLOUD_SPREAD_Z = 600;
+const CLOUD_MIN_Y = 40;
+const CLOUD_MAX_Y = 75;
+
+function createCloudCluster() {
+  const group = new THREE.Group();
+  // Each cloud is a cluster of 4-8 merged spheres
+  const count = 4 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < count; i++) {
+    const r = 3 + Math.random() * 5;
+    const geo = new THREE.SphereGeometry(r, 8, 6);
+    const mat = cloudMat.clone();
+    // Vary brightness slightly for depth
+    const shade = 0.85 + Math.random() * 0.15;
+    mat.color.setRGB(shade, shade, shade);
+    const sphere = new THREE.Mesh(geo, mat);
+    sphere.position.set(
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 6
+    );
+    sphere.scale.y = 0.5 + Math.random() * 0.3; // flatten vertically
+    group.add(sphere);
+  }
+  return group;
 }
 
 // ============================================================
@@ -159,14 +199,18 @@ export class World {
     this._dynamicTimer = 0;
     this._dynamicIndex = 0;
 
-    // Weather particles
+    // Weather
     this._snowParticles = null;
     this._rainParticles = null;
-    this._activeWeather = 'none';   // 'none' | 'snow' | 'rain'
+    this._activeWeather = 'none';
+
+    // Clouds
+    this._clouds = [];
 
     this._buildLighting();
     this._buildSegmentPool();
     this._buildWeather();
+    this._buildClouds();
   }
 
   _buildLighting() {
@@ -210,17 +254,16 @@ export class World {
   }
 
   updateWeather(dt, playerX, playerZ) {
+    // Snow: slow fall with sine-wave X/Z drift
     if (this._activeWeather === 'snow') {
       const positions = this._snowParticles.geometry.attributes.position.array;
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
-        // Slow fall
         positions[i3 + 1] -= 3.5 * dt;
-        // Sine-wave horizontal drift
-        positions[i3] += Math.sin(positions[i3 + 1] * 0.8 + i) * 0.6 * dt;
+        positions[i3]     += Math.sin(positions[i3 + 1] * 0.8 + i) * 0.6 * dt;
+        positions[i3 + 2] += Math.cos(positions[i3 + 1] * 0.5 + i * 0.7) * 0.3 * dt;
 
-        // Recycle: if below ground, reset to top
-        if (positions[i3 + 1] < -1) {
+        if (positions[i3 + 1] < 0) {
           positions[i3]     = playerX + (Math.random() - 0.5) * 80;
           positions[i3 + 1] = 35 + Math.random() * 10;
           positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
@@ -229,23 +272,48 @@ export class World {
       this._snowParticles.geometry.attributes.position.needsUpdate = true;
     }
 
+    // Rain: fast vertical streaks
     if (this._activeWeather === 'rain') {
       const positions = this._rainParticles.geometry.attributes.position.array;
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
-        // Fast downward fall
-        positions[i3 + 1] -= 35 * dt;
-        // Slight wind drift
-        positions[i3] -= 2 * dt;
+        positions[i3 + 1] -= 40 * dt;
+        positions[i3]     -= 2.5 * dt;
 
-        // Recycle
-        if (positions[i3 + 1] < -1) {
+        if (positions[i3 + 1] < 0) {
           positions[i3]     = playerX + (Math.random() - 0.5) * 80;
-          positions[i3 + 1] = 40 + Math.random() * 15;
+          positions[i3 + 1] = 42 + Math.random() * 15;
           positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
         }
       }
       this._rainParticles.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
+  // ---- Clouds ----
+  _buildClouds() {
+    for (let i = 0; i < CLOUD_COUNT; i++) {
+      const cloud = createCloudCluster();
+      cloud.position.set(
+        (Math.random() - 0.5) * CLOUD_SPREAD_X,
+        CLOUD_MIN_Y + Math.random() * (CLOUD_MAX_Y - CLOUD_MIN_Y),
+        Math.random() * CLOUD_SPREAD_Z
+      );
+      this._clouds.push(cloud);
+      this.scene.add(cloud);
+    }
+  }
+
+  updateClouds(dt, playerZ) {
+    for (const cloud of this._clouds) {
+      // Drift slowly along Z
+      cloud.position.z += 4 * dt;
+
+      // Recycle: if cloud drifts far behind player, move it ahead
+      if (cloud.position.z < playerZ - 100) {
+        cloud.position.z = playerZ + CLOUD_SPREAD_Z * 0.5 + Math.random() * 100;
+        cloud.position.x = (Math.random() - 0.5) * CLOUD_SPREAD_X;
+      }
     }
   }
 
@@ -369,7 +437,6 @@ export class World {
     asphaltMat.color.setHex(cfg.road);
     asphaltMat.needsUpdate = true;
 
-    // Activate matching weather
     this._setWeather(cfg.weather || 'none');
   }
 
@@ -399,7 +466,6 @@ export class World {
 
       renderer.toneMappingExposure += (target.exposure - renderer.toneMappingExposure) * t;
 
-      // Switch weather when crossing theme boundary
       this._setWeather(target.weather || 'none');
     } else {
       const cfg = THEMES[this.theme] || THEMES.day;

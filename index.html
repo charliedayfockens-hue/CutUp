@@ -14,7 +14,7 @@
   </script>
 </head>
 <body>
-  <!-- CRT Scanline overlay (always on top for retro feel) -->
+  <!-- CRT Scanline overlay -->
   <div id="crt-overlay"></div>
 
   <!-- ====== START SCREEN — Multi-Stage Menu ====== -->
@@ -56,7 +56,26 @@
       </div>
     </div>
 
-    <!-- Stage 3: Car Garage -->
+    <!-- Stage 3: Vehicle Type -->
+    <div id="stage-vehicle" class="menu-stage" style="display:none">
+      <h2 class="stage-title">VEHICLE TYPE</h2>
+      <div class="btn-grid">
+        <button class="vehicle-btn pixel-btn" data-vehicle="sports">
+          <span class="vehicle-icon sports-icon"></span>
+          <span class="btn-label">Sports Car</span>
+        </button>
+        <button class="vehicle-btn pixel-btn" data-vehicle="truck">
+          <span class="vehicle-icon truck-icon"></span>
+          <span class="btn-label">Truck</span>
+        </button>
+        <button class="vehicle-btn pixel-btn" data-vehicle="limo">
+          <span class="vehicle-icon limo-icon"></span>
+          <span class="btn-label">Limo</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stage 4: Car Garage (Color) -->
     <div id="stage-car" class="menu-stage" style="display:none">
       <h2 class="stage-title">GARAGE</h2>
 
@@ -84,7 +103,7 @@
     </div>
   </div>
 
-  <!-- ====== Game Over Screen (Stage 4) ====== -->
+  <!-- ====== Game Over Screen ====== -->
   <div id="game-over">
     <h2>WRECKED</h2>
     <p class="final-score">Score: <span id="final-score-value">0</span></p>
