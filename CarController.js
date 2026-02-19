@@ -127,12 +127,13 @@ export class CarController {
 
     const speedMs = this.speed / 3.6;
 
-    // ---- Lateral: direct, linear, unambiguous ----
-    // A / ArrowLeft  → -X → visual left on screen
-    // D / ArrowRight → +X → visual right on screen
+    // ---- Lateral: inverted for visual correction ----
+    // In this scene the camera looks down +Z; Three.js maps +X to screen-right
+    // BUT the combined camera follow + lookAt produces a mirrored result,
+    // so we flip the sign here to match what the player actually sees.
     this._lateralDir = 0;
-    if (input.left)  this._lateralDir = -1;
-    if (input.right) this._lateralDir =  1;
+    if (input.left)  this._lateralDir =  1;
+    if (input.right) this._lateralDir = -1;
 
     this._targetX += this._lateralDir * LATERAL_SPEED * dt;
 
@@ -155,8 +156,9 @@ export class CarController {
     this.playerGroup.rotation.set(0, 0, 0);
 
     // ---- Front wheel steering visual ----
-    // Negative Y rotation = wheels point right (+X), positive = left (-X)
-    const wheelAngle = -this._lateralDir * WHEEL_TURN_MAX;
+    // lateralDir is already inverted above, so use it directly:
+    // positive lateralDir → wheels turn left, negative → wheels turn right
+    const wheelAngle = this._lateralDir * WHEEL_TURN_MAX;
     for (const pivot of this.frontWheelPivots) {
       // Smooth the wheel turn
       pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, wheelAngle, alpha);
