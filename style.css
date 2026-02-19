@@ -10,12 +10,13 @@ body {
   display: block;
   position: fixed;
   top: 0; left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100vw; height: 100vh;
   z-index: 0;
 }
 
-/* ---- HUD ---- */
+/* ============================================================
+   HUD
+   ============================================================ */
 #hud {
   position: fixed;
   top: 0; left: 0;
@@ -62,33 +63,6 @@ body {
   letter-spacing: 2px;
 }
 
-#heat-container {
-  position: absolute;
-  bottom: 36px; left: 36px;
-  width: 180px;
-}
-#heat-container .label {
-  font-size: 11px;
-  color: #888;
-  letter-spacing: 3px;
-  display: block;
-  margin-bottom: 5px;
-}
-#heat-bar-bg {
-  width: 100%;
-  height: 6px;
-  background: rgba(255,255,255,0.1);
-  border-radius: 3px;
-  overflow: hidden;
-}
-#heat-bar {
-  width: 0%;
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #0f0, #ff0, #f00);
-  transition: width 0.2s;
-}
-
 #near-miss-popup {
   position: absolute;
   top: 38%;
@@ -101,15 +75,18 @@ body {
   opacity: 0;
   transition: opacity 0.15s;
   pointer-events: none;
+  white-space: nowrap;
 }
 #near-miss-popup.show { opacity: 1; }
 
-/* ---- START SCREEN ---- */
+/* ============================================================
+   START SCREEN — title + map selector
+   ============================================================ */
 #start-screen {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  background: rgba(0,0,0,0.88);
+  background: rgba(0,0,0,0.9);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -117,6 +94,7 @@ body {
   z-index: 100;
   color: #fff;
 }
+
 #start-screen h1 {
   font-size: 72px;
   font-weight: 900;
@@ -127,47 +105,93 @@ body {
   background-clip: text;
   margin-bottom: 8px;
 }
+
 #start-screen .subtitle {
-  font-size: 14px;
-  color: #777;
-  letter-spacing: 5px;
-  margin-bottom: 36px;
-}
-#start-screen .controls-info {
   font-size: 13px;
   color: #666;
+  letter-spacing: 5px;
   margin-bottom: 28px;
+}
+
+#start-screen .controls-info {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 32px;
   text-align: center;
   line-height: 2.2;
 }
 #start-screen kbd {
-  background: rgba(255,255,255,0.08);
-  padding: 3px 8px;
+  background: rgba(255,255,255,0.07);
+  padding: 2px 7px;
   border-radius: 3px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.12);
   font-family: inherit;
-  font-size: 12px;
-}
-#start-btn {
-  cursor: pointer;
-  background: linear-gradient(135deg, #00d4ff, #0080ff);
-  border: none;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 700;
-  padding: 14px 56px;
-  border-radius: 50px;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  box-shadow: 0 0 24px rgba(0,100,255,0.35);
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-#start-btn:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 40px rgba(0,100,255,0.55);
+  font-size: 11px;
+  color: #aaa;
 }
 
-/* ---- GAME OVER ---- */
+/* "SELECT MAP" heading */
+.map-label {
+  font-size: 11px;
+  color: #555;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+/* Map / theme selector grid */
+#map-select {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* shown by default; Menu.js hides it after pick */
+}
+
+.theme-btn {
+  cursor: pointer;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #fff;
+  width: 96px;
+  height: 96px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.18s, border-color 0.18s, transform 0.15s;
+}
+.theme-btn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.3);
+  transform: translateY(-3px);
+}
+.theme-btn:active {
+  transform: translateY(0);
+}
+
+.theme-btn[data-theme="snow"]:hover   { border-color: #9adcff; }
+.theme-btn[data-theme="desert"]:hover { border-color: #ffd080; }
+.theme-btn[data-theme="rain"]:hover   { border-color: #8899aa; }
+.theme-btn[data-theme="dynamic"]:hover { border-color: #cc88ff; }
+
+.theme-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+.theme-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #aaa;
+}
+
+/* ============================================================
+   GAME OVER
+   ============================================================ */
 #game-over {
   position: fixed;
   top: 0; left: 0;
@@ -198,13 +222,17 @@ body {
   color: #fff;
   font-size: 15px;
   font-weight: 700;
-  padding: 12px 44px;
+  padding: 13px 48px;
   border-radius: 50px;
   letter-spacing: 2px;
   text-transform: uppercase;
+  transition: transform 0.15s;
 }
+#restart-btn:hover { transform: scale(1.05); }
 
-/* ---- MOBILE CONTROLS ---- */
+/* ============================================================
+   MOBILE CONTROLS
+   ============================================================ */
 #mobile-controls {
   position: fixed;
   bottom: 0; left: 0;
@@ -219,17 +247,17 @@ body {
   width: 64px; height: 64px;
   border-radius: 50%;
   background: rgba(255,255,255,0.12);
-  border: 2px solid rgba(255,255,255,0.25);
+  border: 2px solid rgba(255,255,255,0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 24px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255,255,255,0.55);
   user-select: none;
   -webkit-user-select: none;
 }
 .m-btn:active { background: rgba(255,255,255,0.28); }
-#btn-left  { left: 24px; bottom: 56px; }
+#btn-left  { left: 24px;  bottom: 56px; }
 #btn-right { left: 108px; bottom: 56px; }
 #btn-gas   { right: 24px; bottom: 86px; }
 #btn-brake { right: 108px; bottom: 36px; }

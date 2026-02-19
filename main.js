@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { World } from './World.js';
 import { CarController } from './CarController.js';
 import { TrafficManager } from './TrafficManager.js';
+import { Menu } from './Menu.js';
 
 // ============================================================
 //  GAME STATE
@@ -25,10 +26,9 @@ document.addEventListener('keyup',   e => { keys[e.code] = false; });
 function getInput() {
   return {
     gas:   keys['KeyW'] || keys['ArrowUp']    || touch.gas,
-    brake: keys['KeyS'] || keys['ArrowDown']  || touch.brake,
+    brake: keys['KeyS'] || keys['ArrowDown']  || keys['Space'] || touch.brake,
     left:  keys['KeyA'] || keys['ArrowLeft']  || touch.left,
     right: keys['KeyD'] || keys['ArrowRight'] || touch.right,
-    drift: keys['Space'],
   };
 }
 
@@ -52,10 +52,8 @@ const dom = {
   hud:         document.getElementById('hud'),
   speedVal:    document.getElementById('speed-value'),
   scoreVal:    document.getElementById('score-value'),
-  heatBar:     document.getElementById('heat-bar'),
   nearMiss:    document.getElementById('near-miss-popup'),
   finalScore:  document.getElementById('final-score-value'),
-  mobile:      document.getElementById('mobile-controls'),
 };
 
 // ============================================================
@@ -95,7 +93,6 @@ traffic.onNearMiss = () => {
   const bonus = 50 * nearMissCombo;
   score += bonus;
   screenShake = 0.35;
-  player.heat = Math.min(100, player.heat + 10);
 
   dom.nearMiss.textContent = nearMissCombo > 1
     ? `NEAR MISS x${nearMissCombo}! +${bonus}`
@@ -143,15 +140,15 @@ function updateCamera(dt) {
 function updateHUD() {
   dom.speedVal.textContent = Math.floor(player.absSpeed);
   dom.scoreVal.textContent = Math.floor(score);
-  dom.heatBar.style.width  = player.heat + '%';
 }
 
 // ============================================================
 //  GAME FLOW
 // ============================================================
-function startGame() {
+function startGame(theme) {
   dom.startScreen.style.display = 'none';
   dom.hud.style.display = 'block';
+  world.setTheme(theme);
   resetGame();
   state = 'playing';
 }
@@ -171,6 +168,7 @@ function resetGame() {
   screenShake = 0;
   player.reset();
   traffic.reset();
+  world.reset();                       // <-- fixes "Try Again" vanishing road
   camera.position.set(player.posX, 8, player.posZ - 14);
   camera.fov = 65;
   camera.updateProjectionMatrix();
@@ -183,8 +181,14 @@ function crash() {
   dom.finalScore.textContent = Math.floor(score);
 }
 
-// Button listeners
-document.getElementById('start-btn').addEventListener('click', startGame);
+// ============================================================
+//  MENU
+// ============================================================
+// The map-selection overlay is shown first; once a theme is picked,
+// it hides and calls startGame(theme).
+const menu = new Menu(startGame);
+
+// "Try Again" goes straight back without re-showing map select
 document.getElementById('restart-btn').addEventListener('click', restartGame);
 
 // ============================================================
@@ -210,7 +214,7 @@ function animate() {
 
     // World
     world.update(player.posZ);
-    world.updateDayNight(dt, renderer);
+    world.updateTheme(dt, renderer);
     world.followPlayer(player.posX, player.posZ);
 
     // Traffic
@@ -234,6 +238,4 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// Kick off the loop — the scene renders immediately (sky + ground
-// + road + car are all visible even before clicking RACE).
 animate();

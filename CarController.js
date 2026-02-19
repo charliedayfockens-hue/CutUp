@@ -1,20 +1,15 @@
 import * as THREE from 'three';
 import { ROAD_HALF, laneToX } from './World.js';
 
-// ---- Tuning constants ----
+// ---- Tuning ----
 const MAX_SPEED       = 280;   // km/h
 const ACCEL           = 48;    // km/h per second
 const BRAKE_FORCE     = 65;
 const ENGINE_BRAKE    = 10;
-const STEER_SPEED     = 2.8;
-const STEER_RETURN    = 4.5;
-const MAX_STEER       = 0.6;
-const GRIP            = 0.95;
-const DRIFT_GRIP      = 0.90;
-const LATERAL_LERP    = 12;    // lerp speed for smooth lane changes
-const WHEEL_TURN_MAX  = Math.PI / 6; // 30 degrees max front-wheel turn
+const LATERAL_SPEED   = 14;    // m/s lateral movement
+const WHEEL_TURN_MAX  = Math.PI / 6; // 30 degrees
 
-// Materials (shared, created once)
+// Materials
 const bodyMat  = new THREE.MeshStandardMaterial({ color: 0xff2200, roughness: 0.3, metalness: 0.7 });
 const cabinMat = new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.1, metalness: 0.8, transparent: true, opacity: 0.7 });
 const darkMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.5 });
@@ -25,83 +20,79 @@ const tlMat    = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xf
 export class CarController {
   constructor(scene) {
     this.scene = scene;
-    this.mesh = new THREE.Group();
 
-    // Wheel arrays — separated for steering visuals
-    this.frontWheelPivots = [];  // Group pivots that rotate on Y for steering
-    this.allWheels = [];         // All 4 wheel meshes for spin
+    // The single Group that holds the entire car — swap children to load a 3D model later.
+    this.playerGroup = new THREE.Group();
 
-    // State
-    this.speed = 0;            // km/h
-    this.steer = 0;            // current steer value (-MAX_STEER .. +MAX_STEER)
-    this.lateralVel = 0;       // physics lateral velocity
-    this._targetX = 0;         // smoothed lateral target position
-    this.drifting = false;
-    this.heat = 0;
+    // Wheel references
+    this.frontWheelPivots = [];
+    this.allWheels = [];
+
+    // State — simple and linear, no drift/slide
+    this.speed = 0;          // km/h (forward)
+    this._targetX = 0;       // lateral target for lerp
+    this._lateralDir = 0;    // current frame lateral input: -1 / 0 / +1
 
     this._buildMesh();
 
-    // Place at lane 1
     const startX = laneToX(1);
-    this.mesh.position.set(startX, 0, 0);
+    this.playerGroup.position.set(startX, 0, 0);
     this._targetX = startX;
-    scene.add(this.mesh);
+    scene.add(this.playerGroup);
   }
 
-  // ---- Build car geometry ----
+  // ---- Geometry ----
   _buildMesh() {
     // Chassis
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.6, 4.2), bodyMat);
     chassis.position.y = 0.5;
     chassis.castShadow = true;
-    this.mesh.add(chassis);
+    this.playerGroup.add(chassis);
 
     // Cabin
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 2.0), cabinMat);
     cabin.position.set(0, 1.0, -0.3);
     cabin.castShadow = true;
-    this.mesh.add(cabin);
+    this.playerGroup.add(cabin);
 
     // Front splitter
     const splitter = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 0.4), darkMat);
     splitter.position.set(0, 0.25, 2.2);
-    this.mesh.add(splitter);
+    this.playerGroup.add(splitter);
 
     // Rear wing + supports
     const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 0.35), darkMat);
     wing.position.set(0, 1.3, -2.0);
-    this.mesh.add(wing);
+    this.playerGroup.add(wing);
     for (const sx of [-0.7, 0.7]) {
       const sup = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), darkMat);
       sup.position.set(sx, 1.15, -2.0);
-      this.mesh.add(sup);
+      this.playerGroup.add(sup);
     }
 
     // ---- Wheels ----
     const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
 
-    // Front wheels (z = +1.3) — wrapped in pivot groups for Y-axis steering
+    // Front wheels — pivot groups for Y-axis steering visual
     for (const x of [-1, 1]) {
       const pivot = new THREE.Group();
       pivot.position.set(x, 0.35, 1.3);
-
       const wheel = new THREE.Mesh(wGeo, wheelMat);
       wheel.rotation.z = Math.PI / 2;
       wheel.castShadow = true;
       pivot.add(wheel);
-
-      this.mesh.add(pivot);
+      this.playerGroup.add(pivot);
       this.frontWheelPivots.push(pivot);
       this.allWheels.push(wheel);
     }
 
-    // Rear wheels (z = -1.3) — no pivot needed, attached directly
+    // Rear wheels — no pivot
     for (const x of [-1, 1]) {
       const wheel = new THREE.Mesh(wGeo, wheelMat);
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(x, 0.35, -1.3);
       wheel.castShadow = true;
-      this.mesh.add(wheel);
+      this.playerGroup.add(wheel);
       this.allWheels.push(wheel);
     }
 
@@ -110,7 +101,7 @@ export class CarController {
     for (const sx of [-0.7, 0.7]) {
       const hl = new THREE.Mesh(hlGeo, hlMat);
       hl.position.set(sx, 0.55, 2.15);
-      this.mesh.add(hl);
+      this.playerGroup.add(hl);
     }
 
     // Tail lights
@@ -118,85 +109,57 @@ export class CarController {
     for (const sx of [-0.7, 0.7]) {
       const tl = new THREE.Mesh(tlGeo, tlMat);
       tl.position.set(sx, 0.55, -2.15);
-      this.mesh.add(tl);
+      this.playerGroup.add(tl);
     }
   }
 
   // ---- Per-frame update ----
   update(dt, input) {
-    // ---- Acceleration / braking ----
+    // ---- Forward speed ----
     if (input.gas) {
       this.speed = Math.min(MAX_SPEED, this.speed + ACCEL * dt);
     } else if (input.brake) {
-      this.speed = Math.max(-20, this.speed - BRAKE_FORCE * dt);
+      this.speed = Math.max(0, this.speed - BRAKE_FORCE * dt);
     } else {
-      if (this.speed > 0)      this.speed = Math.max(0, this.speed - ENGINE_BRAKE * dt);
-      else if (this.speed < 0) this.speed = Math.min(0, this.speed + ENGINE_BRAKE * dt);
+      // Engine braking
+      this.speed = Math.max(0, this.speed - ENGINE_BRAKE * dt);
     }
 
     const speedMs = this.speed / 3.6;
 
-    // ---- Steering input ----
-    // Left (A) produces positive steer → positive lateralVel → _targetX decreases → car moves to -X → screen left.
-    // Right (D) produces negative steer → negative lateralVel → _targetX increases → car moves to +X → screen right.
-    const sIn = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-    if (sIn !== 0) {
-      this.steer += sIn * STEER_SPEED * dt;
-      this.steer = THREE.MathUtils.clamp(this.steer, -MAX_STEER, MAX_STEER);
-    } else {
-      // Auto-return to center
-      if (Math.abs(this.steer) < 0.04) this.steer = 0;
-      else this.steer -= Math.sign(this.steer) * STEER_RETURN * dt;
-    }
+    // ---- Lateral: direct, linear, unambiguous ----
+    // A / ArrowLeft  → -X → visual left on screen
+    // D / ArrowRight → +X → visual right on screen
+    this._lateralDir = 0;
+    if (input.left)  this._lateralDir = -1;
+    if (input.right) this._lateralDir =  1;
 
-    // ---- Lateral force ----
-    const sFactor = Math.min(1, Math.abs(speedMs) / 10);
-    const latForce = this.steer * speedMs * 0.6 * sFactor;
+    this._targetX += this._lateralDir * LATERAL_SPEED * dt;
 
-    // ---- Drift / grip ----
-    if (input.drift && Math.abs(speedMs) > 5) {
-      this.drifting = true;
-      this.lateralVel += latForce * dt * 2;
-      this.lateralVel *= DRIFT_GRIP;
-      this.speed *= 0.998;
-      this.heat = Math.min(100, this.heat + 15 * dt);
-    } else {
-      this.drifting = false;
-      this.lateralVel += latForce * dt;
-      this.lateralVel *= GRIP;
-    }
+    // Barrier clamp
+    const limit = ROAD_HALF - 1.6;
+    if (this._targetX < -limit) this._targetX = -limit;
+    if (this._targetX >  limit) this._targetX =  limit;
 
-    // ---- Heat ----
-    if (!this.drifting) this.heat = Math.max(0, this.heat - 5 * dt);
-    if (this.heat >= 100) this.speed *= 0.99;
+    // Smooth lerp — frame-rate independent
+    const alpha = 1 - Math.pow(0.0001, dt);
+    this.playerGroup.position.x = THREE.MathUtils.lerp(
+      this.playerGroup.position.x, this._targetX, alpha
+    );
 
-    // ---- Position: forward (Z) is direct, lateral (X) is lerped ----
-    this.mesh.position.z += speedMs * dt;
-    this.mesh.position.y = 0;
+    // Forward
+    this.playerGroup.position.z += speedMs * dt;
+    this.playerGroup.position.y = 0;
 
-    // Physics target for lateral position
-    this._targetX -= this.lateralVel * dt;
+    // ---- Visual: body stays parallel to road (no yaw) ----
+    this.playerGroup.rotation.set(0, 0, 0);
 
-    // Barrier clamp on target
-    if (Math.abs(this._targetX) > ROAD_HALF - 1.5) {
-      this.lateralVel *= -0.5;
-      this._targetX = Math.sign(this._targetX) * (ROAD_HALF - 1.6);
-      this.speed *= 0.9;
-      this.heat = Math.min(100, this.heat + 5);
-    }
-
-    // Smooth lerp toward target X — eliminates jitter on fast key taps
-    const lerpAlpha = 1 - Math.pow(0.001, dt);  // frame-rate independent, ~smooth at any fps
-    this.mesh.position.x = THREE.MathUtils.lerp(this.mesh.position.x, this._targetX, lerpAlpha);
-
-    // ---- Visual: body stays PARALLEL to highway (no yaw/roll/pitch) ----
-    this.mesh.rotation.set(0, 0, 0);
-
-    // ---- Visual: front wheels turn on Y-axis ----
-    // Map steer value to wheel angle (inverted because steer>0 = turning left)
-    const wheelAngle = -(this.steer / MAX_STEER) * WHEEL_TURN_MAX;
+    // ---- Front wheel steering visual ----
+    // Negative Y rotation = wheels point right (+X), positive = left (-X)
+    const wheelAngle = -this._lateralDir * WHEEL_TURN_MAX;
     for (const pivot of this.frontWheelPivots) {
-      pivot.rotation.y = wheelAngle;
+      // Smooth the wheel turn
+      pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, wheelAngle, alpha);
     }
 
     // ---- Wheel spin (all 4) ----
@@ -204,21 +167,18 @@ export class CarController {
     for (const w of this.allWheels) w.rotation.x += spin;
   }
 
-  // ---- Reset for new game ----
+  // ---- Reset ----
   reset() {
     this.speed = 0;
-    this.steer = 0;
-    this.lateralVel = 0;
-    this.drifting = false;
-    this.heat = 0;
+    this._lateralDir = 0;
     const startX = laneToX(1);
     this._targetX = startX;
-    this.mesh.position.set(startX, 0, 0);
-    this.mesh.rotation.set(0, 0, 0);
+    this.playerGroup.position.set(startX, 0, 0);
+    this.playerGroup.rotation.set(0, 0, 0);
     for (const pivot of this.frontWheelPivots) pivot.rotation.y = 0;
   }
 
   get absSpeed() { return Math.abs(this.speed); }
-  get posX() { return this.mesh.position.x; }
-  get posZ() { return this.mesh.position.z; }
+  get posX()     { return this.playerGroup.position.x; }
+  get posZ()     { return this.playerGroup.position.z; }
 }

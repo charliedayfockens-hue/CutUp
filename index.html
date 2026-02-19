@@ -14,7 +14,7 @@
   </script>
 </head>
 <body>
-  <!-- Start Screen -->
+  <!-- Start Screen with Map Selection -->
   <div id="start-screen">
     <h1>CUTUP</h1>
     <p class="subtitle">HIGHWAY TRAFFIC RACING</p>
@@ -23,9 +23,31 @@
       <kbd>S</kbd> / <kbd>&darr;</kbd> Brake<br>
       <kbd>A</kbd> / <kbd>&larr;</kbd> Left
       <kbd>D</kbd> / <kbd>&rarr;</kbd> Right
-      <kbd>Space</kbd> Drift
+      <kbd>Space</kbd> Brake
     </div>
-    <button id="start-btn">RACE</button>
+    <p class="map-label">SELECT MAP</p>
+    <div id="map-select">
+      <button class="theme-btn" data-theme="day">
+        <span class="theme-icon">&#9728;</span>
+        <span class="theme-name">Day</span>
+      </button>
+      <button class="theme-btn" data-theme="snow">
+        <span class="theme-icon">&#10052;</span>
+        <span class="theme-name">Snow</span>
+      </button>
+      <button class="theme-btn" data-theme="desert">
+        <span class="theme-icon">&#9788;</span>
+        <span class="theme-name">Desert</span>
+      </button>
+      <button class="theme-btn" data-theme="rain">
+        <span class="theme-icon">&#9748;</span>
+        <span class="theme-name">Rain</span>
+      </button>
+      <button class="theme-btn" data-theme="dynamic">
+        <span class="theme-icon">&#8635;</span>
+        <span class="theme-name">Dynamic</span>
+      </button>
+    </div>
   </div>
 
   <!-- Game Over Screen -->
@@ -44,10 +66,6 @@
     <div id="speed-display">
       <span id="speed-value">0</span>
       <span class="unit">KM/H</span>
-    </div>
-    <div id="heat-container">
-      <span class="label">HEAT</span>
-      <div id="heat-bar-bg"><div id="heat-bar"></div></div>
     </div>
     <div id="near-miss-popup"></div>
   </div>

@@ -3,8 +3,8 @@ import * as THREE from 'three';
 // ---- Constants ----
 export const LANE_COUNT = 4;
 export const LANE_WIDTH = 3.8;
-export const ROAD_WIDTH = LANE_COUNT * LANE_WIDTH + 4; // + shoulders
-export const ROAD_HALF = ROAD_WIDTH / 2;
+export const ROAD_WIDTH = LANE_COUNT * LANE_WIDTH + 4;
+export const ROAD_HALF  = ROAD_WIDTH / 2;
 export const SEGMENT_LEN = 60;
 const SEGMENT_POOL = 24;
 
@@ -12,23 +12,90 @@ export function laneToX(lane) {
   return (lane - (LANE_COUNT - 1) / 2) * LANE_WIDTH;
 }
 
-// ---- Shared materials (created once) ----
-const asphaltMat  = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.85 });
-const dashMat     = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-const yellowMat   = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
-const edgeMat     = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-const barrierMat  = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.4 });
-const poleMat     = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5 });
-const lampMat     = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
-const grassMat    = new THREE.MeshStandardMaterial({ color: 0x3a5f2c, roughness: 0.95 });
+// ---- Theme definitions ----
+const THEMES = {
+  snow: {
+    sky:        0xc8d8e8,
+    fogColor:   0xc8d8e8,
+    fogDensity: 0.004,
+    sunColor:   0xd0e0ff,
+    sunIntensity: 0.9,
+    ambientIntensity: 0.55,
+    hemiSky:    0xc8d8e8,
+    hemiGround: 0xffffff,
+    hemiIntensity: 0.4,
+    road:       0x6a6a70,
+    roadRough:  0.7,
+    roadMetal:  0.15,
+    exposure:   0.9,
+  },
+  desert: {
+    sky:        0xdec89a,
+    fogColor:   0xdec89a,
+    fogDensity: 0.0018,
+    sunColor:   0xfff0a0,
+    sunIntensity: 1.5,
+    ambientIntensity: 0.5,
+    hemiSky:    0xffeebb,
+    hemiGround: 0xc8a060,
+    hemiIntensity: 0.45,
+    road:       0x555550,
+    roadRough:  0.9,
+    roadMetal:  0.05,
+    exposure:   1.1,
+  },
+  rain: {
+    sky:        0x444455,
+    fogColor:   0x444455,
+    fogDensity: 0.005,
+    sunColor:   0x889999,
+    sunIntensity: 0.45,
+    ambientIntensity: 0.35,
+    hemiSky:    0x556666,
+    hemiGround: 0x333344,
+    hemiIntensity: 0.3,
+    road:       0x222228,
+    roadRough:  0.2,
+    roadMetal:  0.6,
+    exposure:   0.65,
+  },
+  day: {
+    sky:        0x87CEEB,
+    fogColor:   0x87CEEB,
+    fogDensity: 0.0022,
+    sunColor:   0xfff5e0,
+    sunIntensity: 1.2,
+    ambientIntensity: 0.5,
+    hemiSky:    0x87CEEB,
+    hemiGround: 0x555555,
+    hemiIntensity: 0.4,
+    road:       0x333338,
+    roadRough:  0.85,
+    roadMetal:  0.1,
+    exposure:   1.0,
+  },
+};
+
+// Cycle order for dynamic mode
+const DYNAMIC_ORDER = ['day', 'snow', 'desert', 'rain'];
+const DYNAMIC_INTERVAL = 60; // seconds per theme
 
 // ---- Shared geometries (created once) ----
-const roadGeo     = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LEN);
-const dashGeo     = new THREE.PlaneGeometry(0.15, 3);
-const solidGeo    = new THREE.PlaneGeometry(0.2, SEGMENT_LEN);
-const barrierGeo  = new THREE.BoxGeometry(0.3, 0.8, SEGMENT_LEN);
-const poleGeo     = new THREE.CylinderGeometry(0.08, 0.08, 6, 6);
-const lampGeo     = new THREE.SphereGeometry(0.25, 6, 6);
+const roadGeo    = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LEN);
+const dashGeo    = new THREE.PlaneGeometry(0.15, 3);
+const solidGeo   = new THREE.PlaneGeometry(0.2, SEGMENT_LEN);
+const barrierGeo = new THREE.BoxGeometry(0.3, 0.8, SEGMENT_LEN);
+const poleGeo    = new THREE.CylinderGeometry(0.08, 0.08, 6, 6);
+const lampGeo    = new THREE.SphereGeometry(0.25, 6, 6);
+
+// ---- Shared materials (mutated by theme) ----
+const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.85 });
+const dashMat    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+const yellowMat  = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
+const edgeMat    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+const barrierMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.4 });
+const poleMat    = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5 });
+const lampMat    = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
 
 export class World {
   constructor(scene) {
@@ -38,24 +105,24 @@ export class World {
     this.ambientLight = null;
     this.hemiLight = null;
     this.fog = null;
-    this.dayNightT = 0;
+
+    // Theme state
+    this.theme = 'day';
+    this._dynamicTimer = 0;
+    this._dynamicIndex = 0;
 
     this._buildLighting();
-    this._buildGround();
     this._buildSegmentPool();
   }
 
   // ---- Lighting ----
   _buildLighting() {
-    // Ambient — always-on base fill so nothing is ever black
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(this.ambientLight);
 
-    // Hemisphere — sky/ground color bleed
-    this.hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x3a5f2c, 0.4);
+    this.hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x555555, 0.4);
     this.scene.add(this.hemiLight);
 
-    // Directional "sun" — the primary light with shadows
     this.sunLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
     this.sunLight.position.set(40, 60, 25);
     this.sunLight.castShadow = true;
@@ -67,20 +134,9 @@ export class World {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Fog
     this.fog = new THREE.FogExp2(0x87CEEB, 0.0022);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x87CEEB);
-  }
-
-  // ---- Ground plane ----
-  _buildGround() {
-    const geo = new THREE.PlaneGeometry(2000, 2000);
-    const mesh = new THREE.Mesh(geo, grassMat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = -0.05;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
   }
 
   // ---- Road segment pool ----
@@ -170,35 +226,88 @@ export class World {
     }
   }
 
-  // ---- Day/night cycle ----
-  updateDayNight(dt, renderer) {
-    this.dayNightT += dt * 0.02;
-    const t = (Math.sin(this.dayNightT) + 1) / 2; // 0 = night, 1 = day
-
-    // Sun orbit
-    this.sunLight.position.x = Math.cos(this.dayNightT) * 80;
-    this.sunLight.position.y = Math.sin(this.dayNightT) * 80 + 10;
-
-    // Intensities
-    this.sunLight.intensity   = THREE.MathUtils.lerp(0.08, 1.3, t);
-    this.ambientLight.intensity = THREE.MathUtils.lerp(0.15, 0.5, t);
-    this.hemiLight.intensity  = THREE.MathUtils.lerp(0.12, 0.4, t);
-
-    // Sky color
-    const day   = new THREE.Color(0x87CEEB);
-    const night = new THREE.Color(0x0a0a2e);
-    const sky   = night.clone().lerp(day, t);
-    this.scene.background.copy(sky);
-    this.fog.color.copy(sky);
-
-    // Fog density
-    this.fog.density = THREE.MathUtils.lerp(0.005, 0.0022, t);
-
-    // Tone mapping exposure
-    renderer.toneMappingExposure = THREE.MathUtils.lerp(0.35, 1.0, t);
+  // ---- Reset segments back to origin (fixes "Try Again" vanishing road) ----
+  reset() {
+    for (let i = 0; i < this.segments.length; i++) {
+      this.segments[i].position.z = i * SEGMENT_LEN;
+    }
+    this._dynamicTimer = 0;
+    this._dynamicIndex = 0;
   }
 
-  // Follow the player so sun/shadow stay relevant
+  // ---- Theme system ----
+  setTheme(name) {
+    this.theme = name;
+    if (name === 'dynamic') {
+      this._dynamicIndex = 0;
+      this._dynamicTimer = 0;
+      this._applyThemeConfig(THEMES[DYNAMIC_ORDER[0]]);
+    } else {
+      this._applyThemeConfig(THEMES[name] || THEMES.day);
+    }
+  }
+
+  _applyThemeConfig(cfg) {
+    // Sky + fog
+    this.scene.background.setHex(cfg.sky);
+    this.fog.color.setHex(cfg.fogColor);
+    this.fog.density = cfg.fogDensity;
+
+    // Lights
+    this.sunLight.color.setHex(cfg.sunColor);
+    this.sunLight.intensity = cfg.sunIntensity;
+    this.ambientLight.intensity = cfg.ambientIntensity;
+    this.hemiLight.color.setHex(cfg.hemiSky);
+    this.hemiLight.groundColor.setHex(cfg.hemiGround);
+    this.hemiLight.intensity = cfg.hemiIntensity;
+
+    // Road material
+    asphaltMat.color.setHex(cfg.road);
+    asphaltMat.roughness = cfg.roadRough;
+    asphaltMat.metalness = cfg.roadMetal;
+    asphaltMat.needsUpdate = true;
+  }
+
+  // ---- Per-frame theme update (handles dynamic transitions) ----
+  updateTheme(dt, renderer) {
+    if (this.theme === 'dynamic') {
+      this._dynamicTimer += dt;
+      if (this._dynamicTimer >= DYNAMIC_INTERVAL) {
+        this._dynamicTimer = 0;
+        this._dynamicIndex = (this._dynamicIndex + 1) % DYNAMIC_ORDER.length;
+      }
+
+      // Lerp toward current target theme
+      const target = THEMES[DYNAMIC_ORDER[this._dynamicIndex]];
+      const t = Math.min(1, dt * 2); // transition speed
+
+      // Lerp sky/fog color
+      this.scene.background.lerp(new THREE.Color(target.sky), t);
+      this.fog.color.lerp(new THREE.Color(target.fogColor), t);
+      this.fog.density += (target.fogDensity - this.fog.density) * t;
+
+      // Lerp lights
+      this.sunLight.color.lerp(new THREE.Color(target.sunColor), t);
+      this.sunLight.intensity += (target.sunIntensity - this.sunLight.intensity) * t;
+      this.ambientLight.intensity += (target.ambientIntensity - this.ambientLight.intensity) * t;
+      this.hemiLight.color.lerp(new THREE.Color(target.hemiSky), t);
+      this.hemiLight.groundColor.lerp(new THREE.Color(target.hemiGround), t);
+      this.hemiLight.intensity += (target.hemiIntensity - this.hemiLight.intensity) * t;
+
+      // Lerp road material
+      asphaltMat.color.lerp(new THREE.Color(target.road), t);
+      asphaltMat.roughness += (target.roadRough - asphaltMat.roughness) * t;
+      asphaltMat.metalness += (target.roadMetal - asphaltMat.metalness) * t;
+
+      renderer.toneMappingExposure += (target.exposure - renderer.toneMappingExposure) * t;
+    } else {
+      // Static theme — just maintain exposure
+      const cfg = THEMES[this.theme] || THEMES.day;
+      renderer.toneMappingExposure = cfg.exposure;
+    }
+  }
+
+  // Follow player for shadows
   followPlayer(px, pz) {
     this.sunLight.target.position.set(px, 0, pz);
     this.sunLight.position.x = px + 40;
