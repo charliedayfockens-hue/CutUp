@@ -17,12 +17,50 @@ const LATERAL_SPEED   = 14;    // m/s lateral movement
 const WHEEL_TURN_MAX  = Math.PI / 6; // 30 degrees
 
 // ---- Toon / DS-style materials ----
-const bodyMat  = new THREE.MeshToonMaterial({ color: 0x33cc55 }); // default green, changed by car select
+const bodyMat  = new THREE.MeshToonMaterial({ color: 0x33cc55 });
 const cabinMat = new THREE.MeshToonMaterial({ color: 0x222244, transparent: true, opacity: 0.7 });
 const darkMat  = new THREE.MeshToonMaterial({ color: 0x111111 });
 const wheelMat = new THREE.MeshToonMaterial({ color: 0x1a1a1a });
 const hlMat    = new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0xffffcc, emissiveIntensity: 0.5 });
 const tlMat    = new THREE.MeshToonMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.4 });
+
+// ---- Galaxy ShaderMaterial ----
+const galaxyVertexShader = `
+  varying vec3 vPos;
+  void main() {
+    vPos = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const galaxyFragmentShader = `
+  uniform float uTime;
+  varying vec3 vPos;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void main() {
+    vec2 uv = vPos.xz * 1.5 + uTime * 0.08;
+    float stars = 0.0;
+    for (float i = 0.0; i < 3.0; i++) {
+      vec2 grid = floor(uv * (8.0 + i * 6.0));
+      float h = hash(grid + i * 13.0);
+      if (h > 0.92) {
+        stars += (h - 0.92) * 12.5 * (0.5 + 0.5 * sin(uTime * 2.0 + h * 40.0));
+      }
+    }
+    vec3 base = mix(vec3(0.05, 0.0, 0.15), vec3(0.0, 0.05, 0.2), sin(uv.x * 2.0) * 0.5 + 0.5);
+    vec3 col = base + vec3(stars * 0.8, stars * 0.7, stars);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+const galaxyMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: galaxyVertexShader,
+  fragmentShader: galaxyFragmentShader,
+});
 
 // Outline helper — black slightly-larger duplicate behind
 function addOutline(parent, geo, scale) {
@@ -47,9 +85,10 @@ export class CarController {
     this._targetX = 0;
     this._lateralDir = 0;
 
-    // Rainbow mode
-    this._rainbowMode = false;
+    // Color mode: 'solid' | 'rainbow' | 'galaxy'
+    this._colorMode = 'solid';
     this._rainbowHue = 0;
+    this._chassisMesh = null; // ref for swapping material
 
     this._buildMesh();
 
@@ -60,19 +99,30 @@ export class CarController {
   }
 
   // ---- Set car color ----
-  setColor(colorName) {
-    this._rainbowMode = false;
-    const colorMap = {
-      green:  0x33cc55,
-      yellow: 0xffdd00,
-      red:    0xff2200,
-      blue:   0x3366ff,
-    };
-    if (colorName === 'rainbow') {
-      this._rainbowMode = true;
+  setColor(value) {
+    this._colorMode = 'solid';
+
+    if (value === 'rainbow') {
+      this._colorMode = 'rainbow';
       this._rainbowHue = 0;
+      this._chassisMesh.material = bodyMat;
+    } else if (value === 'galaxy') {
+      this._colorMode = 'galaxy';
+      this._chassisMesh.material = galaxyMat;
+    } else if (typeof value === 'string' && value.startsWith('#')) {
+      // Hex color from color picker
+      this._chassisMesh.material = bodyMat;
+      bodyMat.color.set(value);
     } else {
-      bodyMat.color.setHex(colorMap[colorName] || 0x33cc55);
+      // Named preset
+      const colorMap = {
+        green:  0x33cc55,
+        yellow: 0xffdd00,
+        red:    0xff2200,
+        blue:   0x3366ff,
+      };
+      this._chassisMesh.material = bodyMat;
+      bodyMat.color.setHex(colorMap[value] || 0x33cc55);
     }
   }
 
@@ -85,6 +135,7 @@ export class CarController {
     chassis.castShadow = true;
     this.playerGroup.add(chassis);
     addOutline(chassis, chassisGeo, 1.04);
+    this._chassisMesh = chassis;
 
     // Cabin
     const cabGeo = new THREE.BoxGeometry(1.7, 0.5, 2.0);
@@ -111,7 +162,7 @@ export class CarController {
     // ---- Wheels ----
     const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
 
-    // Front wheels
+    // Front wheels (on pivots for steering)
     for (const x of [-1, 1]) {
       const pivot = new THREE.Group();
       pivot.position.set(x, 0.35, 1.3);
@@ -190,20 +241,25 @@ export class CarController {
     // No yaw
     this.playerGroup.rotation.set(0, 0, 0);
 
-    // ---- Front wheel steering visual ----
-    const wheelAngle = (input.wheelAngle || 0) * (Math.PI / 180);
+    // ---- Front wheel steering — synced to lateral input ----
+    // moveDir drives the target: positive moveDir = wheels turn one way, negative the other.
+    // Clamp to WHEEL_TURN_MAX (30 deg). Smoothly lerp back to 0 when no input.
+    const targetWheelY = this._lateralDir !== 0
+      ? THREE.MathUtils.clamp(-this._lateralDir * WHEEL_TURN_MAX, -WHEEL_TURN_MAX, WHEEL_TURN_MAX)
+      : 0;
     for (const pivot of this.frontWheelPivots) {
-      pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, wheelAngle, alpha);
+      pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, targetWheelY, Math.min(1, 12 * dt));
     }
 
     // ---- Wheel spin (all 4) ----
     const spin = speedMs * dt * 3;
     for (const w of this.allWheels) w.rotation.x += spin;
 
-    // ---- Rainbow mode ----
-    if (this._rainbowMode) {
-      this._rainbowHue = (this._rainbowHue + dt * 0.5) % 1;
-      bodyMat.color.setHSL(this._rainbowHue, 0.9, 0.55);
+    // ---- Color mode updates ----
+    if (this._colorMode === 'rainbow') {
+      bodyMat.color.setHSL((Date.now() * 0.0005) % 1, 1, 0.5);
+    } else if (this._colorMode === 'galaxy') {
+      galaxyMat.uniforms.uTime.value = performance.now() * 0.001;
     }
   }
 

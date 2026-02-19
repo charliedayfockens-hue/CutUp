@@ -1,20 +1,21 @@
 // Menu.js — Multi-stage CRT-style menu overlay
-// Stage 1: Main (Play + Settings)
+// Stage 1: Main (Play)
 // Stage 2: Map Select (Snow, Desert, Rain, Dynamic)
-// Stage 3: Car Select (Green, Yellow, Red, Blue, Rainbow)
-// Stage 4: Game Over (Retry, Main Menu) — handled externally via show/hide
+// Stage 3: Garage (Color picker + Rainbow / Galaxy specials)
+// Stage 4: Game Over (Retry, Main Menu) — handled externally
 
 export class Menu {
   constructor(onStart) {
     this._onStart = onStart;       // callback(theme, carColor)
     this._selectedTheme = 'day';
-    this._selectedCar = 'green';
+    this._selectedCar = '#33cc55';
 
     // DOM refs
     this._overlay = document.getElementById('start-screen');
     this._stageMain = document.getElementById('stage-main');
     this._stageMap = document.getElementById('stage-map');
     this._stageCar = document.getElementById('stage-car');
+    this._colorInput = document.getElementById('car-color-input');
 
     // Stage 1: Play button
     document.getElementById('btn-play').addEventListener('click', () => {
@@ -25,21 +26,30 @@ export class Menu {
     document.querySelectorAll('.map-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this._selectedTheme = btn.dataset.theme;
-        // Highlight selected
         document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         this._showStage('car');
       });
     });
 
-    // Stage 3: Car color select
+    // Stage 3a: Color picker "GO" button
+    document.getElementById('btn-pick-color').addEventListener('click', () => {
+      this._selectedCar = this._colorInput.value; // hex string like "#ff2200"
+      this._launch();
+    });
+
+    // Stage 3b: Special color buttons (Rainbow, Galaxy)
     document.querySelectorAll('.car-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        this._selectedCar = btn.dataset.color;
-        this.hide();
-        this._onStart(this._selectedTheme, this._selectedCar);
+        this._selectedCar = btn.dataset.color;  // 'rainbow' or 'galaxy'
+        this._launch();
       });
     });
+  }
+
+  _launch() {
+    this.hide();
+    this._onStart(this._selectedTheme, this._selectedCar);
   }
 
   _showStage(stage) {

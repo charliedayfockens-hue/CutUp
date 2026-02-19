@@ -56,29 +56,29 @@
       </div>
     </div>
 
-    <!-- Stage 3: Car Color Select -->
+    <!-- Stage 3: Car Garage -->
     <div id="stage-car" class="menu-stage" style="display:none">
-      <h2 class="stage-title">SELECT CAR</h2>
+      <h2 class="stage-title">GARAGE</h2>
+
+      <!-- Color picker row -->
+      <div class="garage-picker-row">
+        <label class="picker-label" for="car-color-input">CUSTOM COLOR</label>
+        <input type="color" id="car-color-input" value="#33cc55">
+        <button id="btn-pick-color" class="garage-go-btn">GO</button>
+      </div>
+
+      <!-- OR divider -->
+      <div class="garage-divider">- OR CHOOSE A SPECIAL -</div>
+
+      <!-- Special buttons -->
       <div class="btn-grid">
-        <button class="car-btn pixel-btn" data-color="green">
-          <span class="color-swatch" style="background:#33cc55"></span>
-          <span class="btn-label">Green</span>
-        </button>
-        <button class="car-btn pixel-btn" data-color="yellow">
-          <span class="color-swatch" style="background:#ffdd00"></span>
-          <span class="btn-label">Yellow</span>
-        </button>
-        <button class="car-btn pixel-btn" data-color="red">
-          <span class="color-swatch" style="background:#ff2200"></span>
-          <span class="btn-label">Red</span>
-        </button>
-        <button class="car-btn pixel-btn" data-color="blue">
-          <span class="color-swatch" style="background:#3366ff"></span>
-          <span class="btn-label">Blue</span>
-        </button>
         <button class="car-btn pixel-btn" data-color="rainbow">
           <span class="color-swatch rainbow-swatch"></span>
           <span class="btn-label">Rainbow</span>
+        </button>
+        <button class="car-btn pixel-btn" data-color="galaxy">
+          <span class="color-swatch galaxy-swatch"></span>
+          <span class="btn-label">Galaxy</span>
         </button>
       </div>
     </div>

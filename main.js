@@ -16,7 +16,7 @@ let screenShake = 0;
 
 // Current selections (persisted for Retry)
 let currentTheme = 'day';
-let currentCar = 'green';
+let currentCar = '#33cc55';
 
 // ============================================================
 //  INPUT — Direct Mapping via BINDINGS
@@ -29,7 +29,7 @@ document.addEventListener('keyup',   e => { keysDown[e.code] = false; keysDown[e
 
 function getInput() {
   const gas   = keysDown['KeyW'] || keysDown['ArrowUp'] || touch.gas;
-  // Spacebar is the only brake input (no S/ArrowDown for brake)
+  // Spacebar is the only brake input
   const brake = keysDown['Space'] || touch.brake;
 
   // Direct mapping: look up each binding key to get move direction + wheel angle
@@ -43,7 +43,7 @@ function getInput() {
     }
   }
 
-  // Also support arrow keys with same mapping as a/d
+  // Arrow keys mirror a/d bindings
   if (keysDown['ArrowLeft'] || touch.left) {
     moveDir += BINDINGS['a'].move;
     wheelAngle += BINDINGS['a'].wheel;
@@ -53,7 +53,6 @@ function getInput() {
     wheelAngle += BINDINGS['d'].wheel;
   }
 
-  // Clamp
   moveDir = Math.max(-1, Math.min(1, moveDir));
   wheelAngle = Math.max(-30, Math.min(30, wheelAngle));
 
@@ -92,8 +91,8 @@ const RENDER_H = 360;
 
 const canvas = document.getElementById('gameCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setSize(RENDER_W, RENDER_H, false);   // false = don't set CSS size
-renderer.setPixelRatio(1);                       // Force 1:1 pixel mapping
+renderer.setSize(RENDER_W, RENDER_H, false);
+renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -103,8 +102,6 @@ const scene  = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, RENDER_W / RENDER_H, 0.5, 1000);
 camera.position.set(0, 3, -7);
 camera.lookAt(0, 0, 10);
-
-// No resize needed for fixed-resolution rendering — CSS handles scaling
 
 // ============================================================
 //  CREATE GAME OBJECTS
@@ -116,13 +113,8 @@ const traffic = new TrafficManager(scene);
 // ============================================================
 //  DEMO MODE — auto-driving car shown behind menu
 // ============================================================
-let demoActive = true;
-
 function updateDemo(dt) {
-  // Simulate gas input
   const demoInput = { gas: true, brake: false, moveDir: 0, wheelAngle: 0 };
-
-  // Gently weave between lanes
   const t = performance.now() * 0.001;
   const weave = Math.sin(t * 0.4) * 0.3;
   demoInput.moveDir = weave;
@@ -130,15 +122,13 @@ function updateDemo(dt) {
 
   player.update(dt, demoInput);
 
-  const ms = player.absSpeed / 3.6;
   world.update(player.posZ);
   world.updateTheme(dt, renderer);
+  world.updateWeather(dt, player.posX, player.posZ);
   world.followPlayer(player.posX, player.posZ);
 
-  // Spawn some traffic for visual interest
-  traffic.update(dt, player.posX, player.posZ, player.absSpeed, ms * dt);
+  traffic.update(dt, player.posX, player.posZ, player.absSpeed, 0);
 
-  // Camera follows but at demo angle
   updateCamera(dt);
 }
 
@@ -159,12 +149,22 @@ traffic.onNearMiss = () => {
 };
 
 // ============================================================
-//  CAMERA CONTROLLER — Close DS-style (0, 3, 7)
+//  CAMERA CONTROLLER — Clamped zoom at high speed
+//  Resting: dist=7, h=3.  Max pullback capped at +2 Z, +0.8 Y.
 // ============================================================
+const CAM_REST_DIST = 7;
+const CAM_REST_H   = 3;
+const CAM_MAX_EXTRA_DIST = 2;   // max Z pullback beyond resting
+const CAM_MAX_EXTRA_H    = 0.8; // max Y rise beyond resting
+const CAM_MAX_FOV  = 72;        // cap from base 65
+
 function updateCamera(dt) {
   const ratio = player.absSpeed / 280;
-  const dist  = 7 + ratio * 3;     // 7m to 10m back (much closer)
-  const h     = 3 + ratio * 1;     // 3m to 4m up
+
+  // Clamped offsets: Math.min ensures we never exceed the cap
+  const dist = CAM_REST_DIST + Math.min(ratio * 3, CAM_MAX_EXTRA_DIST);
+  const h    = CAM_REST_H   + Math.min(ratio * 1, CAM_MAX_EXTRA_H);
+
   const tx = player.posX;
   const ty = h;
   const tz = player.posZ - dist;
@@ -182,11 +182,11 @@ function updateCamera(dt) {
     if (screenShake < 0.01) screenShake = 0;
   }
 
-  // Look ahead (closer)
+  // Look ahead (closer feel)
   camera.lookAt(player.posX, 1.2, player.posZ + 12 + ratio * 14);
 
-  // Speed FOV
-  const targetFov = 65 + ratio * 15;
+  // Clamped FOV
+  const targetFov = Math.min(65 + ratio * 15, CAM_MAX_FOV);
   camera.fov += (targetFov - camera.fov) * dt * 2;
   camera.updateProjectionMatrix();
 }
@@ -204,14 +204,13 @@ function updateHUD() {
 // ============================================================
 function startGame(theme, carColor) {
   currentTheme = theme;
-  currentCar = carColor || 'green';
+  currentCar = carColor || '#33cc55';
 
   dom.startScreen.style.display = 'none';
   dom.hud.style.display = 'block';
   world.setTheme(theme);
   player.setColor(currentCar);
   resetGame();
-  demoActive = false;
   state = 'playing';
 }
 
@@ -226,7 +225,6 @@ function goToMainMenu() {
   dom.gameOver.style.display = 'none';
   dom.hud.style.display = 'none';
   resetGame();
-  demoActive = true;
   state = 'menu';
   world.setTheme('day');
   menu.show();
@@ -241,7 +239,7 @@ function resetGame() {
   player.reset();
   traffic.reset();
   world.reset();
-  camera.position.set(player.posX, 3, player.posZ - 7);
+  camera.position.set(player.posX, CAM_REST_H, player.posZ - CAM_REST_DIST);
   camera.fov = 65;
   camera.updateProjectionMatrix();
 }
@@ -272,7 +270,6 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
   if (state === 'menu') {
-    // Demo mode: auto-drive behind the menu
     updateDemo(dt);
   } else if (state === 'playing') {
     // Player
@@ -289,6 +286,7 @@ function animate() {
     // World
     world.update(player.posZ);
     world.updateTheme(dt, renderer);
+    world.updateWeather(dt, player.posX, player.posZ);
     world.followPlayer(player.posX, player.posZ);
 
     // Traffic

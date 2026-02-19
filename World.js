@@ -28,6 +28,7 @@ const THEMES = {
     roadRough:  0.7,
     roadMetal:  0.15,
     exposure:   0.9,
+    weather:    'snow',
   },
   desert: {
     sky:        0xdec89a,
@@ -43,6 +44,7 @@ const THEMES = {
     roadRough:  0.9,
     roadMetal:  0.05,
     exposure:   1.1,
+    weather:    'none',
   },
   rain: {
     sky:        0x444455,
@@ -58,6 +60,7 @@ const THEMES = {
     roadRough:  0.2,
     roadMetal:  0.6,
     exposure:   0.65,
+    weather:    'rain',
   },
   day: {
     sky:        0x87CEEB,
@@ -73,6 +76,7 @@ const THEMES = {
     roadRough:  0.85,
     roadMetal:  0.1,
     exposure:   1.0,
+    weather:    'none',
   },
 };
 
@@ -97,6 +101,51 @@ const barrierMat = new THREE.MeshToonMaterial({ color: 0x888888 });
 const poleMat    = new THREE.MeshToonMaterial({ color: 0x666666 });
 const lampMat    = new THREE.MeshToonMaterial({ color: 0xffffcc, emissive: 0xffffaa, emissiveIntensity: 0.3 });
 
+// ============================================================
+//  WEATHER PARTICLE SYSTEMS
+// ============================================================
+const PARTICLE_COUNT = 3000;
+
+function createSnowParticles() {
+  const positions = new Float32Array(PARTICLE_COUNT * 3);
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    positions[i * 3]     = (Math.random() - 0.5) * 80;   // X spread
+    positions[i * 3 + 1] = Math.random() * 40;            // Y height
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 120;  // Z spread
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.4,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+function createRainParticles() {
+  const positions = new Float32Array(PARTICLE_COUNT * 3);
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    positions[i * 3]     = (Math.random() - 0.5) * 80;
+    positions[i * 3 + 1] = Math.random() * 50;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xaabbcc,
+    size: 0.15,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+// ============================================================
+
 export class World {
   constructor(scene) {
     this.scene = scene;
@@ -110,8 +159,14 @@ export class World {
     this._dynamicTimer = 0;
     this._dynamicIndex = 0;
 
+    // Weather particles
+    this._snowParticles = null;
+    this._rainParticles = null;
+    this._activeWeather = 'none';   // 'none' | 'snow' | 'rain'
+
     this._buildLighting();
     this._buildSegmentPool();
+    this._buildWeather();
   }
 
   _buildLighting() {
@@ -137,6 +192,64 @@ export class World {
     this.scene.background = new THREE.Color(0x87CEEB);
   }
 
+  // ---- Weather ----
+  _buildWeather() {
+    this._snowParticles = createSnowParticles();
+    this._snowParticles.visible = false;
+    this.scene.add(this._snowParticles);
+
+    this._rainParticles = createRainParticles();
+    this._rainParticles.visible = false;
+    this.scene.add(this._rainParticles);
+  }
+
+  _setWeather(type) {
+    this._activeWeather = type;
+    this._snowParticles.visible = (type === 'snow');
+    this._rainParticles.visible = (type === 'rain');
+  }
+
+  updateWeather(dt, playerX, playerZ) {
+    if (this._activeWeather === 'snow') {
+      const positions = this._snowParticles.geometry.attributes.position.array;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const i3 = i * 3;
+        // Slow fall
+        positions[i3 + 1] -= 3.5 * dt;
+        // Sine-wave horizontal drift
+        positions[i3] += Math.sin(positions[i3 + 1] * 0.8 + i) * 0.6 * dt;
+
+        // Recycle: if below ground, reset to top
+        if (positions[i3 + 1] < -1) {
+          positions[i3]     = playerX + (Math.random() - 0.5) * 80;
+          positions[i3 + 1] = 35 + Math.random() * 10;
+          positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
+        }
+      }
+      this._snowParticles.geometry.attributes.position.needsUpdate = true;
+    }
+
+    if (this._activeWeather === 'rain') {
+      const positions = this._rainParticles.geometry.attributes.position.array;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const i3 = i * 3;
+        // Fast downward fall
+        positions[i3 + 1] -= 35 * dt;
+        // Slight wind drift
+        positions[i3] -= 2 * dt;
+
+        // Recycle
+        if (positions[i3 + 1] < -1) {
+          positions[i3]     = playerX + (Math.random() - 0.5) * 80;
+          positions[i3 + 1] = 40 + Math.random() * 15;
+          positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
+        }
+      }
+      this._rainParticles.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
+  // ---- Road segment pool ----
   _buildSegmentPool() {
     for (let i = 0; i < SEGMENT_POOL; i++) {
       const seg = this._createSegment();
@@ -255,6 +368,9 @@ export class World {
 
     asphaltMat.color.setHex(cfg.road);
     asphaltMat.needsUpdate = true;
+
+    // Activate matching weather
+    this._setWeather(cfg.weather || 'none');
   }
 
   updateTheme(dt, renderer) {
@@ -282,6 +398,9 @@ export class World {
       asphaltMat.color.lerp(new THREE.Color(target.road), t);
 
       renderer.toneMappingExposure += (target.exposure - renderer.toneMappingExposure) * t;
+
+      // Switch weather when crossing theme boundary
+      this._setWeather(target.weather || 'none');
     } else {
       const cfg = THEMES[this.theme] || THEMES.day;
       renderer.toneMappingExposure = cfg.exposure;
