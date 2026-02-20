@@ -8,7 +8,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     }
   }
   </script>
@@ -29,7 +30,8 @@
         <kbd>Space</kbd> Brake<br>
         <kbd>A</kbd> / <kbd>&larr;</kbd> Left &nbsp;
         <kbd>D</kbd> / <kbd>&rarr;</kbd> Right &nbsp;
-        <kbd>Esc</kbd> Pause
+        <kbd>Esc</kbd> Pause<br>
+        <kbd>Shift</kbd> Nitro
       </div>
       <button id="btn-play" class="big-btn">PLAY</button>
     </div>
@@ -78,8 +80,113 @@
       <button class="car-btn swatch-btn galaxy-swatch"  data-color="galaxy"  title="Galaxy"></button>
     </div>
 
+    <!-- Save Slots -->
+    <div class="save-slots-row">
+      <label class="picker-label">SAVES</label>
+      <button class="save-slot-btn" id="save-slot-1" data-slot="1">Slot 1: Empty</button>
+      <button class="save-slot-btn" id="save-slot-2" data-slot="2">Slot 2: Empty</button>
+      <button class="save-slot-btn" id="save-slot-3" data-slot="3">Slot 3: Empty</button>
+    </div>
+
+    <!-- Action buttons row -->
+    <div class="garage-actions-row">
+      <button id="btn-editor" class="go-btn editor-btn">EDITOR</button>
+      <button id="btn-save" class="go-btn save-btn">SAVE</button>
+    </div>
+
     <!-- Launch -->
     <button id="btn-go" class="big-btn garage-go-big">GO!</button>
+  </div>
+
+  <!-- ====== EDITOR PANEL — Car Architect UI ====== -->
+  <div id="editor-panel">
+    <div class="editor-header">
+      <h3>CAR EDITOR</h3>
+      <span id="editor-parts-count">0 / 20</span>
+    </div>
+
+    <!-- Spawn buttons -->
+    <div class="editor-spawn-row">
+      <button id="editor-spawn-box" class="editor-spawn-btn">+ Box</button>
+      <button id="editor-spawn-cyl" class="editor-spawn-btn">+ Cyl</button>
+      <button id="editor-spawn-sph" class="editor-spawn-btn">+ Sph</button>
+    </div>
+
+    <!-- Parts list -->
+    <div id="editor-parts-list" class="editor-parts-list"></div>
+
+    <!-- Transform: Position -->
+    <div class="editor-section-label">POSITION</div>
+    <div class="editor-slider-row">
+      <label>X</label>
+      <input type="range" id="editor-pos-x" min="-5" max="5" step="0.05" value="0">
+      <span id="editor-pos-x-val">0.00</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Y</label>
+      <input type="range" id="editor-pos-y" min="-2" max="5" step="0.05" value="0.5">
+      <span id="editor-pos-y-val">0.50</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Z</label>
+      <input type="range" id="editor-pos-z" min="-5" max="5" step="0.05" value="0">
+      <span id="editor-pos-z-val">0.00</span>
+    </div>
+
+    <!-- Transform: Rotation (degrees) -->
+    <div class="editor-section-label">ROTATION</div>
+    <div class="editor-slider-row">
+      <label>X</label>
+      <input type="range" id="editor-rot-x" min="-180" max="180" step="1" value="0">
+      <span id="editor-rot-x-val">0.00</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Y</label>
+      <input type="range" id="editor-rot-y" min="-180" max="180" step="1" value="0">
+      <span id="editor-rot-y-val">0.00</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Z</label>
+      <input type="range" id="editor-rot-z" min="-180" max="180" step="1" value="0">
+      <span id="editor-rot-z-val">0.00</span>
+    </div>
+
+    <!-- Transform: Scale -->
+    <div class="editor-section-label">SCALE</div>
+    <div class="editor-slider-row">
+      <label>X</label>
+      <input type="range" id="editor-scale-x" min="0.05" max="5" step="0.05" value="1">
+      <span id="editor-scale-x-val">1.00</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Y</label>
+      <input type="range" id="editor-scale-y" min="0.05" max="5" step="0.05" value="1">
+      <span id="editor-scale-y-val">1.00</span>
+    </div>
+    <div class="editor-slider-row">
+      <label>Z</label>
+      <input type="range" id="editor-scale-z" min="0.05" max="5" step="0.05" value="1">
+      <span id="editor-scale-z-val">1.00</span>
+    </div>
+
+    <!-- Material -->
+    <div class="editor-section-label">MATERIAL</div>
+    <div class="editor-material-row">
+      <label>
+        <input type="checkbox" id="editor-colorable" checked>
+        Follows car color
+      </label>
+      <input type="color" id="editor-part-color" value="#888888" disabled>
+    </div>
+
+    <!-- Part actions -->
+    <div class="editor-action-row">
+      <button id="editor-delete-part" class="editor-action-btn danger">DELETE PART</button>
+      <button id="editor-clear-all" class="editor-action-btn danger">CLEAR ALL</button>
+    </div>
+
+    <!-- Done -->
+    <button id="editor-done-btn" class="big-btn editor-done">DONE</button>
   </div>
 
   <!-- ====== Pause Screen ====== -->
@@ -111,6 +218,15 @@
       <span id="speed-value">0</span>
       <span class="unit">KM/H</span>
     </div>
+    <!-- Nitro bar -->
+    <div id="nitro-display">
+      <span class="nitro-label">NITRO</span>
+      <div class="nitro-bar-bg">
+        <div class="nitro-bar-fill" id="nitro-fill"></div>
+      </div>
+    </div>
+    <!-- Combo display -->
+    <div id="combo-display"></div>
     <!-- Pause button top-right -->
     <button id="pause-btn">&#9646;&#9646;</button>
     <div id="near-miss-popup"></div>

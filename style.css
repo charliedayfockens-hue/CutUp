@@ -685,3 +685,324 @@ body {
 #btn-right { left: 108px; bottom: 56px; }
 #btn-gas   { right: 24px; bottom: 86px; }
 #btn-brake { right: 108px; bottom: 36px; }
+
+/* ============================================================
+   NITRO BAR — bottom-left HUD
+   ============================================================ */
+#nitro-display {
+  position: absolute;
+  bottom: 36px; left: 36px;
+  pointer-events: none;
+}
+.nitro-label {
+  display: block;
+  font-size: 10px;
+  color: #0af;
+  letter-spacing: 3px;
+  margin-bottom: 4px;
+}
+.nitro-bar-bg {
+  width: 120px;
+  height: 10px;
+  background: rgba(0,170,255,0.12);
+  border: 1px solid rgba(0,170,255,0.3);
+}
+.nitro-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #0af, #0ff);
+  transition: width 0.15s;
+  box-shadow: 0 0 8px rgba(0,170,255,0.5);
+}
+.nitro-bar-fill.active {
+  background: linear-gradient(90deg, #f80, #ff0);
+  box-shadow: 0 0 14px rgba(255,136,0,0.7);
+}
+
+/* Combo display */
+#combo-display {
+  position: absolute;
+  top: 80px; left: 36px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff0;
+  text-shadow: 0 0 10px rgba(255,255,0,0.5);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#combo-display.show { opacity: 1; }
+
+/* ============================================================
+   SAVE SLOTS — in garage panel
+   ============================================================ */
+.save-slots-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.save-slot-btn {
+  cursor: pointer;
+  background: rgba(0,255,0,0.05);
+  border: 1px solid rgba(0,255,0,0.2);
+  color: #8c8;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 6px 10px;
+  letter-spacing: 1px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.save-slot-btn:hover {
+  background: rgba(0,255,0,0.15);
+  border-color: rgba(0,255,0,0.5);
+}
+.save-slot-btn.has-data {
+  border-color: rgba(0,255,0,0.4);
+  color: #4f4;
+}
+
+.garage-actions-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.editor-btn {
+  background: rgba(0,170,255,0.12) !important;
+  border-color: rgba(0,170,255,0.4) !important;
+  color: #0af !important;
+}
+.editor-btn:hover {
+  background: rgba(0,170,255,0.25) !important;
+  border-color: rgba(0,170,255,0.7) !important;
+}
+.save-btn {
+  background: rgba(255,200,0,0.12) !important;
+  border-color: rgba(255,200,0,0.4) !important;
+  color: #fc0 !important;
+}
+.save-btn:hover {
+  background: rgba(255,200,0,0.25) !important;
+  border-color: rgba(255,200,0,0.7) !important;
+}
+
+/* ============================================================
+   EDITOR PANEL — floating side panel
+   ============================================================ */
+#editor-panel {
+  position: fixed;
+  top: 0; right: 0;
+  width: 260px;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 110;
+  display: none;
+  flex-direction: column;
+  padding: 16px 14px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 8, 0, 0) 0%,
+    rgba(0, 8, 0, 0.92) 8%,
+    rgba(0, 8, 0, 0.96) 100%
+  );
+  font-family: 'Courier New', Courier, monospace;
+  color: #dfd;
+  gap: 6px;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.editor-header h3 {
+  font-size: 14px;
+  letter-spacing: 4px;
+  color: #0af;
+  text-shadow: 0 0 10px rgba(0,170,255,0.3);
+  margin: 0;
+}
+#editor-parts-count {
+  font-size: 11px;
+  color: #8c8;
+  letter-spacing: 1px;
+}
+
+/* Spawn buttons */
+.editor-spawn-row {
+  display: flex;
+  gap: 6px;
+}
+.editor-spawn-btn {
+  cursor: pointer;
+  flex: 1;
+  background: rgba(0,170,255,0.1);
+  border: 1px solid rgba(0,170,255,0.3);
+  color: #0af;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 0;
+  letter-spacing: 1px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.editor-spawn-btn:hover {
+  background: rgba(0,170,255,0.25);
+  border-color: rgba(0,170,255,0.6);
+}
+
+/* Parts list */
+.editor-parts-list {
+  max-height: 80px;
+  overflow-y: auto;
+  border: 1px solid rgba(0,255,0,0.1);
+  background: rgba(0,0,0,0.3);
+  margin-bottom: 4px;
+}
+.editor-part-item {
+  font-size: 10px;
+  padding: 3px 6px;
+  cursor: pointer;
+  color: #8c8;
+  transition: background 0.1s;
+}
+.editor-part-item:hover { background: rgba(0,255,0,0.1); }
+.editor-part-item.selected {
+  background: rgba(0,170,255,0.2);
+  color: #0af;
+}
+
+/* Section labels */
+.editor-section-label {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #585;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* Slider rows */
+.editor-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.editor-slider-row label {
+  font-size: 10px;
+  color: #8c8;
+  width: 12px;
+  text-align: right;
+}
+.editor-slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(0,255,0,0.15);
+  outline: none;
+  cursor: pointer;
+}
+.editor-slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: #4f4;
+  border: none;
+  cursor: pointer;
+}
+.editor-slider-row input[type="range"]:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.editor-slider-row span {
+  font-size: 10px;
+  color: #8c8;
+  width: 40px;
+  text-align: right;
+}
+
+/* Material row */
+.editor-material-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+.editor-material-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8c8;
+  cursor: pointer;
+}
+.editor-material-row input[type="color"] {
+  width: 30px;
+  height: 22px;
+  border: 1px solid rgba(0,255,0,0.3);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.editor-material-row input[type="color"]:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Action buttons */
+.editor-action-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.editor-action-btn {
+  cursor: pointer;
+  flex: 1;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 5px 0;
+  letter-spacing: 1px;
+  border: 1px solid;
+  transition: background 0.15s, border-color 0.15s;
+}
+.editor-action-btn.danger {
+  background: rgba(255,60,60,0.1);
+  border-color: rgba(255,60,60,0.3);
+  color: #f66;
+}
+.editor-action-btn.danger:hover {
+  background: rgba(255,60,60,0.25);
+  border-color: rgba(255,60,60,0.6);
+}
+
+/* Done button */
+.editor-done {
+  margin-top: 8px;
+  padding: 10px 0 !important;
+  font-size: 16px !important;
+  letter-spacing: 6px !important;
+  width: 100%;
+}
+
+/* Scrollbar styling for editor panel */
+#editor-panel::-webkit-scrollbar { width: 4px; }
+#editor-panel::-webkit-scrollbar-track { background: transparent; }
+#editor-panel::-webkit-scrollbar-thumb { background: rgba(0,255,0,0.2); }
+.editor-parts-list::-webkit-scrollbar { width: 3px; }
+.editor-parts-list::-webkit-scrollbar-track { background: transparent; }
+.editor-parts-list::-webkit-scrollbar-thumb { background: rgba(0,255,0,0.15); }
+
+/* ============================================================
+   HIT-STOP OVERLAY — dramatic collision flash
+   ============================================================ */
+#hit-stop-flash {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(255,255,255,0.4);
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+#hit-stop-flash.active { opacity: 1; }

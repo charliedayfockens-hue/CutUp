@@ -241,4 +241,15 @@ export class TrafficManager {
     }
     this.spawnAccum = 0;
   }
+
+  // ---- Toggle visibility of all traffic (for editor mode) ----
+  setVisibility(visible) {
+    for (const car of this.pool) {
+      if (!visible) {
+        car.visible = false;
+      } else if (car.userData.active) {
+        car.visible = true;
+      }
+    }
+  }
 }

@@ -491,4 +491,15 @@ export class World {
     this.sunLight.position.x = px + 40;
     this.sunLight.position.z = pz + 25;
   }
+
+  // ---- Toggle visibility of all world objects (for editor mode) ----
+  setVisibility(visible) {
+    for (const seg of this.segments) seg.visible = visible;
+    for (const cloud of this._clouds) cloud.visible = visible;
+    this._snowParticles.visible = visible && this._activeWeather === 'snow';
+    this._rainParticles.visible = visible && this._activeWeather === 'rain';
+    this.sunLight.visible = visible;
+    this.ambientLight.visible = visible;
+    this.hemiLight.visible = visible;
+  }
 }
