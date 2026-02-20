@@ -14,6 +14,7 @@ const BRAKE_FORCE     = 65;
 const ENGINE_BRAKE    = 10;
 const LATERAL_SPEED   = 14;    // m/s lateral movement
 const WHEEL_TURN_MAX  = Math.PI / 6; // 30 degrees
+const NITRO_MULTIPLIER = 1.4;  // Speed multiplier when nitro active
 
 // ---- Toon / DS-style materials ----
 const bodyMat  = new THREE.MeshToonMaterial({ color: 0x33cc55 });
@@ -109,6 +110,13 @@ export class CarController {
     this._rainbowHue = 0;
     this._chassisMesh = null;
 
+    // Nitro state
+    this.nitroActive = false;
+
+    // Custom car group reference (set by editor)
+    this._customCarGroup = null;
+    this._usingCustom = false;
+
     this._buildSportsCar();
 
     const startX = laneToX(1);
@@ -123,6 +131,9 @@ export class CarController {
     const specs = VEHICLE_SPECS[this._vehicleType] || VEHICLE_SPECS.sports;
     this.halfW = specs.halfW;
     this.halfL = specs.halfL;
+
+    // If switching to a standard vehicle, detach custom group
+    this._usingCustom = false;
 
     // Save position
     const pos = this.playerGroup.position.clone();
@@ -148,6 +159,37 @@ export class CarController {
 
     // Restore position
     this.playerGroup.position.copy(pos);
+  }
+
+  // ---- Attach custom car group from editor ----
+  attachCustomGroup(customGroup) {
+    this._customCarGroup = customGroup;
+  }
+
+  useCustomCar() {
+    if (!this._customCarGroup) return;
+
+    // Clear default mesh children (keep group)
+    while (this.playerGroup.children.length > 0) {
+      const child = this.playerGroup.children[0];
+      this.playerGroup.remove(child);
+      if (child.geometry) child.geometry.dispose();
+    }
+    this.frontWheelPivots = [];
+    this.allWheels = [];
+    this._chassisMesh = null;
+
+    // Clone custom parts into playerGroup
+    for (const child of this._customCarGroup.children) {
+      const clone = child.clone();
+      this.playerGroup.add(clone);
+    }
+
+    this._usingCustom = true;
+    this._vehicleType = 'custom';
+    // Use sports car collision bounds as default for custom
+    this.halfW = VEHICLE_SPECS.sports.halfW;
+    this.halfL = VEHICLE_SPECS.sports.halfL;
   }
 
   // ---- Set car color ----
@@ -389,9 +431,12 @@ export class CarController {
 
   // ---- Per-frame update ----
   update(dt, input) {
+    // Effective max speed (nitro boost)
+    const effectiveMax = this.nitroActive ? MAX_SPEED * NITRO_MULTIPLIER : MAX_SPEED;
+
     // Forward speed
     if (input.gas) {
-      this.speed = Math.min(MAX_SPEED, this.speed + ACCEL * dt);
+      this.speed = Math.min(effectiveMax, this.speed + ACCEL * dt);
     } else if (input.brake) {
       this.speed = Math.max(0, this.speed - BRAKE_FORCE * dt);
     } else {
@@ -401,7 +446,7 @@ export class CarController {
     const speedMs = this.speed / 3.6;
     const specs = VEHICLE_SPECS[this._vehicleType] || VEHICLE_SPECS.sports;
 
-    // Lateral movement — adapted to vehicle
+    // Lateral movement — snappy steering with high lerp alpha
     this._lateralDir = 0;
     if (input.moveDir !== undefined && input.moveDir !== 0) {
       this._lateralDir = input.moveDir;
@@ -414,10 +459,9 @@ export class CarController {
     if (this._targetX < -limit) this._targetX = -limit;
     if (this._targetX >  limit) this._targetX =  limit;
 
-    // Smooth lerp
-    const alpha = 1 - Math.pow(0.0001, dt);
+    // Snappy lateral lerp — high alpha (0.2) for responsive feel
     this.playerGroup.position.x = THREE.MathUtils.lerp(
-      this.playerGroup.position.x, this._targetX, alpha
+      this.playerGroup.position.x, this._targetX, 0.2
     );
 
     // Forward
@@ -425,9 +469,11 @@ export class CarController {
     this.playerGroup.position.y = 0;
     this.playerGroup.rotation.set(0, 0, 0);
 
-    // Front wheel steering — adapted turn radius
+    // Front wheel steering — INVERTED FIX:
+    // Positive _lateralDir (moving left/+X) now turns wheels visually left (+Y rotation)
+    // This aligns the wheel visual direction with the car's movement direction.
     const targetWheelY = this._lateralDir !== 0
-      ? THREE.MathUtils.clamp(-this._lateralDir * specs.wheelTurnMax, -specs.wheelTurnMax, specs.wheelTurnMax)
+      ? THREE.MathUtils.clamp(this._lateralDir * specs.wheelTurnMax, -specs.wheelTurnMax, specs.wheelTurnMax)
       : 0;
     for (const pivot of this.frontWheelPivots) {
       pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, targetWheelY, Math.min(1, 12 * dt));
@@ -459,6 +505,7 @@ export class CarController {
   reset() {
     this.speed = 0;
     this._lateralDir = 0;
+    this.nitroActive = false;
     const startX = laneToX(1);
     this._targetX = startX;
     this.playerGroup.position.set(startX, 0, 0);
