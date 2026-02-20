@@ -445,6 +445,16 @@ export class CarController {
     }
   }
 
+  // ---- Tick shader/color animations without advancing physics ----
+  // Called during garage turntable preview so rainbow/galaxy stay alive.
+  tickAnimations() {
+    if (this._colorMode === 'rainbow') {
+      bodyMat.color.setHSL((Date.now() * 0.0005) % 1, 1, 0.5);
+    } else if (this._colorMode === 'galaxy') {
+      galaxyMat.uniforms.uTime.value = performance.now() * 0.001;
+    }
+  }
+
   // ---- Reset ----
   reset() {
     this.speed = 0;

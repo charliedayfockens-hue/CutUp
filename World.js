@@ -254,38 +254,51 @@ export class World {
   }
 
   updateWeather(dt, playerX, playerZ) {
-    // Snow: slow fall with sine-wave X/Z drift
+    // ---- SNOW ----
     if (this._activeWeather === 'snow') {
+      // Pin the particle system group to the player every frame.
+      // All particle positions are now in LOCAL space (offsets from player).
+      this._snowParticles.position.set(playerX, 0, playerZ);
+
       const positions = this._snowParticles.geometry.attributes.position.array;
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
+        // Fall + sine-wave X/Z drift (in local space)
         positions[i3 + 1] -= 3.5 * dt;
         positions[i3]     += Math.sin(positions[i3 + 1] * 0.8 + i) * 0.6 * dt;
         positions[i3 + 2] += Math.cos(positions[i3 + 1] * 0.5 + i * 0.7) * 0.3 * dt;
 
+        // If particle drops below ground, instantly reset to the top of the sky
         if (positions[i3 + 1] < 0) {
-          positions[i3]     = playerX + (Math.random() - 0.5) * 80;
-          positions[i3 + 1] = 35 + Math.random() * 10;
-          positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
+          positions[i3]     = (Math.random() - 0.5) * 80;   // local X offset
+          positions[i3 + 1] = 80 + Math.random() * 20;      // reset to top (y=80-100)
+          positions[i3 + 2] = (Math.random() - 0.5) * 120;  // local Z offset
         }
       }
+      // Must be set every frame for the GPU buffer to update
       this._snowParticles.geometry.attributes.position.needsUpdate = true;
     }
 
-    // Rain: fast vertical streaks
+    // ---- RAIN ----
     if (this._activeWeather === 'rain') {
+      // Pin the rain group to the player every frame
+      this._rainParticles.position.set(playerX, 0, playerZ);
+
       const positions = this._rainParticles.geometry.attributes.position.array;
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
+        // Fast vertical fall + slight forward drift (in local space)
         positions[i3 + 1] -= 40 * dt;
         positions[i3]     -= 2.5 * dt;
 
+        // If particle drops below ground, instantly reset to the top of the sky
         if (positions[i3 + 1] < 0) {
-          positions[i3]     = playerX + (Math.random() - 0.5) * 80;
-          positions[i3 + 1] = 42 + Math.random() * 15;
-          positions[i3 + 2] = playerZ + (Math.random() - 0.5) * 120;
+          positions[i3]     = (Math.random() - 0.5) * 80;   // local X offset
+          positions[i3 + 1] = 80 + Math.random() * 20;      // reset to top (y=80-100)
+          positions[i3 + 2] = (Math.random() - 0.5) * 120;  // local Z offset
         }
       }
+      // Must be set every frame for the GPU buffer to update
       this._rainParticles.geometry.attributes.position.needsUpdate = true;
     }
   }

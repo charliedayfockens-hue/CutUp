@@ -119,6 +119,11 @@ body {
   color: #dfd;
 }
 
+/* Garage turntable mode — reduce opacity so the 3D car shines through */
+#start-screen.garage-mode {
+  background: rgba(0, 4, 0, 0.50);
+}
+
 /* Shared stage container */
 .menu-stage {
   display: flex;

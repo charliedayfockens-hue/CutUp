@@ -7,7 +7,7 @@ import { Menu } from './Menu.js';
 // ============================================================
 //  GAME STATE
 // ============================================================
-let state = 'menu';   // 'menu' | 'playing' | 'gameover'
+let state = 'menu';   // 'menu' | 'garage' | 'playing' | 'gameover'
 let score = 0;
 let distance = 0;
 let nearMissCombo = 0;
@@ -15,8 +15,8 @@ let nearMissTimer = 0;
 let screenShake = 0;
 
 // Current selections (persisted for Retry)
-let currentTheme = 'day';
-let currentCar = '#33cc55';
+let currentTheme   = 'day';
+let currentCar     = '#33cc55';
 let currentVehicle = 'sports';
 
 // ============================================================
@@ -37,21 +37,21 @@ function getInput() {
 
   for (const [key, cfg] of Object.entries(BINDINGS)) {
     if (keysDown[key]) {
-      moveDir += cfg.move;
+      moveDir    += cfg.move;
       wheelAngle += cfg.wheel;
     }
   }
 
   if (keysDown['ArrowLeft'] || touch.left) {
-    moveDir += BINDINGS['a'].move;
+    moveDir    += BINDINGS['a'].move;
     wheelAngle += BINDINGS['a'].wheel;
   }
   if (keysDown['ArrowRight'] || touch.right) {
-    moveDir += BINDINGS['d'].move;
+    moveDir    += BINDINGS['d'].move;
     wheelAngle += BINDINGS['d'].wheel;
   }
 
-  moveDir = Math.max(-1, Math.min(1, moveDir));
+  moveDir    = Math.max(-1, Math.min(1, moveDir));
   wheelAngle = Math.max(-30, Math.min(30, wheelAngle));
 
   return { gas, brake, moveDir, wheelAngle };
@@ -87,19 +87,17 @@ const dom = {
 const RENDER_W = 640;
 const RENDER_H = 360;
 
-const canvas = document.getElementById('gameCanvas');
+const canvas   = document.getElementById('gameCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
 renderer.setSize(RENDER_W, RENDER_H, false);
 renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
 const scene  = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(65, RENDER_W / RENDER_H, 0.5, 1000);
-camera.position.set(0, 3, -7);
-camera.lookAt(0, 0, 10);
 
 // ============================================================
 //  CREATE GAME OBJECTS
@@ -109,29 +107,99 @@ const player  = new CarController(scene);
 const traffic = new TrafficManager(scene);
 
 // ============================================================
-//  DEMO MODE — auto-driving car shown behind menu
+//  CAMERA — Strictly locked (no speed zoom, no FOV change)
+//  Y and Z are hard-set each frame. Only X has speed-sway.
+// ============================================================
+const CAM_DIST = 7;
+const CAM_H    = 3;
+const MAX_SPEED = 280;
+
+function updateCamera() {
+  const speedRatio = player.absSpeed / MAX_SPEED;
+
+  // Subtle X-axis sine sway proportional to speed
+  const sway = Math.sin(Date.now() * 0.005) * speedRatio * 0.5;
+
+  // Strictly locked — Y and Z never deviate from the fixed offset
+  camera.position.x = player.posX + sway;
+  camera.position.y = CAM_H;
+  camera.position.z = player.posZ - CAM_DIST;
+
+  // Screen shake on top of locked position
+  if (screenShake > 0) {
+    camera.position.x += (Math.random() - 0.5) * screenShake * 2;
+    camera.position.y += (Math.random() - 0.5) * screenShake;
+    screenShake *= 0.88;
+    if (screenShake < 0.01) screenShake = 0;
+  }
+
+  camera.lookAt(player.posX, 1.2, player.posZ + 16);
+  camera.fov = 65;
+  camera.updateProjectionMatrix();
+}
+
+// ============================================================
+//  DEMO MODE — auto-driving car shown behind main menu
 // ============================================================
 function updateDemo(dt) {
-  const demoInput = { gas: true, brake: false, moveDir: 0, wheelAngle: 0 };
   const t = performance.now() * 0.001;
   const weave = Math.sin(t * 0.4) * 0.3;
-  demoInput.moveDir = weave;
-  demoInput.wheelAngle = weave * 15;
-
-  player.update(dt, demoInput);
+  player.update(dt, { gas: true, brake: false, moveDir: weave, wheelAngle: weave * 15 });
 
   world.update(player.posZ);
   world.updateTheme(dt, renderer);
   world.updateWeather(dt, player.posX, player.posZ);
   world.updateClouds(dt, player.posZ);
   world.followPlayer(player.posX, player.posZ);
-
   traffic.update(dt, player.posX, player.posZ, player.absSpeed, 0);
 
-  updateCamera(dt);
+  updateCamera();
 }
 
-// Near-miss callback
+// ============================================================
+//  GARAGE TURNTABLE — 3D preview during vehicle/color select
+// ============================================================
+
+// Called by Menu whenever the player changes vehicle type or color
+function onGaragePreview(theme, vehicleType, carColor) {
+  currentTheme   = theme;
+  currentVehicle = vehicleType  || 'sports';
+  currentCar     = carColor     || '#33cc55';
+
+  // Apply theme so background/lighting matches the selected map
+  world.setTheme(theme);
+
+  // Rebuild vehicle mesh if type changed, then apply color
+  player.setVehicle(currentVehicle);
+  player.setColor(currentCar);
+
+  // Move car to world center for turntable display
+  player.playerGroup.position.set(0, 0, 0);
+  player.playerGroup.rotation.set(0, 0, 0);
+
+  // Dim the overlay so the 3D preview is clearly visible
+  dom.startScreen.classList.add('garage-mode');
+
+  state = 'garage';
+}
+
+function updateGarage(dt) {
+  // Slowly spin the car on its Y-axis (~0.005 rad/frame at 60fps)
+  player.playerGroup.rotation.y += 0.8 * dt;
+
+  // Keep shader animations alive (rainbow HSL cycle, galaxy uTime)
+  player.tickAnimations();
+
+  // Close turntable camera — strictly positioned, no lerp
+  camera.position.set(0, 2, 5);
+  camera.lookAt(0, 1, 0);
+  camera.fov = 65;
+  camera.updateProjectionMatrix();
+}
+
+// ============================================================
+//  NEAR-MISS CALLBACK
+// ============================================================
 traffic.onNearMiss = () => {
   if (state !== 'playing') return;
   if (nearMissTimer > 0) nearMissCombo++; else nearMissCombo = 1;
@@ -148,44 +216,6 @@ traffic.onNearMiss = () => {
 };
 
 // ============================================================
-//  CAMERA — Fixed distance (Z=7, Y=3) + speed-based sway
-// ============================================================
-const CAM_DIST = 7;
-const CAM_H    = 3;
-const MAX_SPEED = 280;
-
-function updateCamera(dt) {
-  const speedRatio = player.absSpeed / MAX_SPEED;
-
-  // Sway: subtle sine on X proportional to speed
-  const sway = Math.sin(Date.now() * 0.005) * speedRatio * 0.5;
-
-  const tx = player.posX + sway;
-  const ty = CAM_H;
-  const tz = player.posZ - CAM_DIST;
-
-  const s = 4 * dt;
-  camera.position.x += (tx - camera.position.x) * s;
-  camera.position.y += (ty - camera.position.y) * s * 0.8;
-  camera.position.z += (tz - camera.position.z) * s;
-
-  // Shake
-  if (screenShake > 0) {
-    camera.position.x += (Math.random() - 0.5) * screenShake * 2;
-    camera.position.y += (Math.random() - 0.5) * screenShake;
-    screenShake *= 0.88;
-    if (screenShake < 0.01) screenShake = 0;
-  }
-
-  // Fixed look-ahead
-  camera.lookAt(player.posX, 1.2, player.posZ + 16);
-
-  // Fixed FOV — no speed zoom
-  camera.fov = 65;
-  camera.updateProjectionMatrix();
-}
-
-// ============================================================
 //  HUD
 // ============================================================
 function updateHUD() {
@@ -197,22 +227,34 @@ function updateHUD() {
 //  GAME FLOW
 // ============================================================
 function startGame(theme, carColor, vehicleType) {
-  currentTheme = theme;
-  currentCar = carColor || '#33cc55';
-  currentVehicle = vehicleType || 'sports';
+  currentTheme   = theme;
+  currentCar     = carColor     || '#33cc55';
+  currentVehicle = vehicleType  || 'sports';
 
+  // Hide menu, remove garage tint, show HUD
   dom.startScreen.style.display = 'none';
+  dom.startScreen.classList.remove('garage-mode');
   dom.hud.style.display = 'block';
+
   world.setTheme(theme);
+
+  // Rebuild vehicle (in case user reached Play without preview)
   player.setVehicle(currentVehicle);
   player.setColor(currentCar);
+
+  // Reset car rotation and game state, then snap camera
+  player.playerGroup.rotation.set(0, 0, 0);
   resetGame();
+
   state = 'playing';
 }
 
 function retryGame() {
   dom.gameOver.style.display = 'none';
   dom.hud.style.display = 'block';
+  player.setVehicle(currentVehicle);
+  player.setColor(currentCar);
+  player.playerGroup.rotation.set(0, 0, 0);
   resetGame();
   state = 'playing';
 }
@@ -220,6 +262,7 @@ function retryGame() {
 function goToMainMenu() {
   dom.gameOver.style.display = 'none';
   dom.hud.style.display = 'none';
+  dom.startScreen.classList.remove('garage-mode');
   resetGame();
   state = 'menu';
   world.setTheme('day');
@@ -235,7 +278,10 @@ function resetGame() {
   player.reset();
   traffic.reset();
   world.reset();
+
+  // Snap camera directly to gameplay position behind the car
   camera.position.set(player.posX, CAM_H, player.posZ - CAM_DIST);
+  camera.lookAt(player.posX, 1.2, player.posZ + 16);
   camera.fov = 65;
   camera.updateProjectionMatrix();
 }
@@ -250,9 +296,8 @@ function crash() {
 // ============================================================
 //  MENU
 // ============================================================
-const menu = new Menu(startGame);
+const menu = new Menu(startGame, onGaragePreview);
 
-// Game Over buttons
 document.getElementById('retry-btn').addEventListener('click', retryGame);
 document.getElementById('mainmenu-btn').addEventListener('click', goToMainMenu);
 
@@ -267,40 +312,34 @@ function animate() {
 
   if (state === 'menu') {
     updateDemo(dt);
+  } else if (state === 'garage') {
+    updateGarage(dt);
   } else if (state === 'playing') {
-    // Player
     player.update(dt, getInput());
 
-    // Distance / score
     const ms = player.absSpeed / 3.6;
     distance += ms * dt;
-    score += ms * dt * 0.5;
+    score    += ms * dt * 0.5;
 
-    // Camera
-    updateCamera(dt);
+    updateCamera();
 
-    // World
     world.update(player.posZ);
     world.updateTheme(dt, renderer);
     world.updateWeather(dt, player.posX, player.posZ);
     world.updateClouds(dt, player.posZ);
     world.followPlayer(player.posX, player.posZ);
 
-    // Traffic
     traffic.update(dt, player.posX, player.posZ, player.absSpeed, distance);
 
-    // Collision — uses per-vehicle hitbox dimensions
     if (traffic.checkCollision(player.posX, player.posZ, player.halfW, player.halfL)) {
       crash();
     }
 
-    // Near-miss combo timer
     if (nearMissTimer > 0) {
       nearMissTimer -= dt;
       if (nearMissTimer <= 0) nearMissCombo = 0;
     }
 
-    // HUD
     updateHUD();
   }
 

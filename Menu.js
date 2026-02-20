@@ -6,26 +6,28 @@
 // Game Over (Retry, Main Menu) — handled externally
 
 export class Menu {
-  constructor(onStart) {
-    this._onStart = onStart;       // callback(theme, carColor, vehicleType)
-    this._selectedTheme = 'day';
-    this._selectedCar = '#33cc55';
+  constructor(onStart, onPreview) {
+    this._onStart   = onStart;             // callback(theme, carColor, vehicleType)
+    this._onPreview = onPreview || null;   // callback(theme, vehicleType, carColor) — live garage turntable
+
+    this._selectedTheme   = 'day';
+    this._selectedCar     = '#33cc55';
     this._selectedVehicle = 'sports';
 
     // DOM refs
-    this._overlay = document.getElementById('start-screen');
-    this._stageMain = document.getElementById('stage-main');
-    this._stageMap = document.getElementById('stage-map');
+    this._overlay      = document.getElementById('start-screen');
+    this._stageMain    = document.getElementById('stage-main');
+    this._stageMap     = document.getElementById('stage-map');
     this._stageVehicle = document.getElementById('stage-vehicle');
-    this._stageCar = document.getElementById('stage-car');
-    this._colorInput = document.getElementById('car-color-input');
+    this._stageCar     = document.getElementById('stage-car');
+    this._colorInput   = document.getElementById('car-color-input');
 
-    // Stage 1: Play button
+    // Stage 1: Play button → map select
     document.getElementById('btn-play').addEventListener('click', () => {
       this._showStage('map');
     });
 
-    // Stage 2: Map select buttons
+    // Stage 2: Map select → vehicle select
     document.querySelectorAll('.map-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this._selectedTheme = btn.dataset.theme;
@@ -35,26 +37,40 @@ export class Menu {
       });
     });
 
-    // Stage 3: Vehicle type buttons
+    // Stage 3: Vehicle type → garage (triggers turntable preview)
     document.querySelectorAll('.vehicle-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this._selectedVehicle = btn.dataset.vehicle;
         document.querySelectorAll('.vehicle-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
+        // Start the 3D garage turntable for this vehicle
+        if (this._onPreview) {
+          this._onPreview(this._selectedTheme, this._selectedVehicle, this._selectedCar);
+        }
         this._showStage('car');
       });
     });
 
-    // Stage 4a: Color picker "GO" button
+    // Stage 4: Live color picker preview
+    this._colorInput.addEventListener('input', () => {
+      if (this._onPreview) {
+        this._onPreview(this._selectedTheme, this._selectedVehicle, this._colorInput.value);
+      }
+    });
+
+    // Stage 4a: Color picker "GO" button — set color and launch
     document.getElementById('btn-pick-color').addEventListener('click', () => {
-      this._selectedCar = this._colorInput.value; // hex string like "#ff2200"
+      this._selectedCar = this._colorInput.value;
       this._launch();
     });
 
-    // Stage 4b: Special color buttons (Rainbow, Galaxy)
+    // Stage 4b: Special color buttons (Rainbow, Galaxy) — update preview then launch
     document.querySelectorAll('.car-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        this._selectedCar = btn.dataset.color;  // 'rainbow' or 'galaxy'
+        this._selectedCar = btn.dataset.color;
+        if (this._onPreview) {
+          this._onPreview(this._selectedTheme, this._selectedVehicle, this._selectedCar);
+        }
         this._launch();
       });
     });
