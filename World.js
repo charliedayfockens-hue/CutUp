@@ -72,8 +72,8 @@ const THEMES = {
   },
 };
 
-const DYNAMIC_ORDER = ['day', 'snow', 'desert', 'rain'];
-const DYNAMIC_INTERVAL = 60;
+const DYNAMIC_ORDER = ['day', 'rain', 'snow', 'desert'];
+const DYNAMIC_INTERVAL = 25;  // seconds between weather transitions
 
 // ---- Shared geometries ----
 const roadGeo    = new THREE.PlaneGeometry(ROAD_WIDTH, SEGMENT_LEN);

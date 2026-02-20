@@ -53,8 +53,8 @@ body {
 
 #score-display {
   position: absolute;
-  top: 28px; right: 36px;
-  text-align: right;
+  top: 28px; left: 36px;
+  text-align: left;
   color: #fff;
 }
 #score-display .label {
@@ -104,6 +104,169 @@ body {
 }
 #near-miss-popup.show { opacity: 1; }
 
+/* Pause button — top-right HUD corner */
+#pause-btn {
+  position: absolute;
+  top: 24px; right: 32px;
+  pointer-events: all;
+  cursor: pointer;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.6);
+  font-size: 16px;
+  padding: 6px 10px;
+  letter-spacing: 2px;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+#pause-btn:hover {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+
+/* ============================================================
+   PAUSE SCREEN
+   ============================================================ */
+#pause-screen {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  font-family: 'Courier New', Courier, monospace;
+}
+.pause-title {
+  font-size: 52px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 8px;
+  margin-bottom: 36px;
+  text-shadow: 0 0 30px rgba(255,255,255,0.3);
+}
+.pause-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* ============================================================
+   GARAGE PANEL — bottom overlay over the 3D turntable
+   ============================================================ */
+#garage-panel {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 28px 32px;
+  /* Gradient: opaque at bottom, fades to transparent so car is visible above */
+  background: linear-gradient(
+    to top,
+    rgba(0, 8, 0, 0.94) 55%,
+    rgba(0, 8, 0, 0.6)  80%,
+    rgba(0, 0, 0, 0)    100%
+  );
+  font-family: 'Courier New', Courier, monospace;
+  color: #dfd;
+  gap: 14px;
+}
+#garage-panel.visible { display: flex; }
+
+.garage-map-badge {
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: #6c6;
+  text-transform: uppercase;
+  margin-bottom: -4px;
+}
+
+/* Vehicle cycler row */
+.cycler-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.cycler-row span {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  min-width: 160px;
+  text-align: center;
+  color: #4f4;
+  text-shadow: 0 0 10px rgba(0,255,0,0.3);
+}
+.cycle-btn {
+  cursor: pointer;
+  background: rgba(0,255,0,0.08);
+  border: 2px solid rgba(0,255,0,0.3);
+  color: #4f4;
+  font-size: 18px;
+  width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.cycle-btn:hover {
+  background: rgba(0,255,0,0.2);
+  border-color: rgba(0,255,0,0.7);
+  transform: scale(1.1);
+}
+.cycle-btn:active { transform: scale(0.95); }
+
+/* Color strip */
+.color-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.color-strip .picker-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #8c8;
+  text-transform: uppercase;
+}
+.color-strip #car-color-input {
+  width: 44px; height: 32px;
+  border: 2px solid rgba(0,255,0,0.3);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.color-strip #car-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-strip #car-color-input::-webkit-color-swatch { border: none; border-radius: 0; }
+
+/* Swatch buttons (Rainbow, Galaxy) */
+.swatch-btn {
+  cursor: pointer;
+  width: 36px; height: 36px;
+  border: 2px solid rgba(255,255,255,0.25);
+  background: transparent;
+  padding: 0;
+  transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.swatch-btn:hover {
+  border-color: rgba(255,255,255,0.6);
+  transform: scale(1.12);
+}
+.swatch-btn.active {
+  border-color: #4f4;
+  box-shadow: 0 0 10px rgba(0,255,0,0.5);
+}
+
+/* Garage GO button */
+.garage-go-big {
+  margin-top: 4px;
+  padding: 14px 72px;
+  font-size: 22px;
+  letter-spacing: 8px;
+}
+
 /* ============================================================
    START SCREEN — CRT-style multi-stage menu
    ============================================================ */
@@ -117,11 +280,6 @@ body {
   justify-content: center;
   z-index: 100;
   color: #dfd;
-}
-
-/* Garage turntable mode — reduce opacity so the 3D car shines through */
-#start-screen.garage-mode {
-  background: rgba(0, 4, 0, 0.50);
 }
 
 /* Shared stage container */

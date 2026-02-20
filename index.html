@@ -17,7 +17,7 @@
   <!-- CRT Scanline overlay -->
   <div id="crt-overlay"></div>
 
-  <!-- ====== START SCREEN — Multi-Stage Menu ====== -->
+  <!-- ====== START SCREEN — Stage 1: Main + Stage 2: Map ====== -->
   <div id="start-screen">
 
     <!-- Stage 1: Main -->
@@ -25,10 +25,11 @@
       <h1>CUTUP</h1>
       <p class="subtitle">HIGHWAY TRAFFIC RACING</p>
       <div class="controls-info">
-        <kbd>W</kbd> / <kbd>&uarr;</kbd> Accelerate
+        <kbd>W</kbd> / <kbd>&uarr;</kbd> Accelerate &nbsp;
         <kbd>Space</kbd> Brake<br>
-        <kbd>A</kbd> / <kbd>&larr;</kbd> Left
-        <kbd>D</kbd> / <kbd>&rarr;</kbd> Right
+        <kbd>A</kbd> / <kbd>&larr;</kbd> Left &nbsp;
+        <kbd>D</kbd> / <kbd>&rarr;</kbd> Right &nbsp;
+        <kbd>Esc</kbd> Pause
       </div>
       <button id="btn-play" class="big-btn">PLAY</button>
     </div>
@@ -56,50 +57,37 @@
       </div>
     </div>
 
-    <!-- Stage 3: Vehicle Type -->
-    <div id="stage-vehicle" class="menu-stage" style="display:none">
-      <h2 class="stage-title">VEHICLE TYPE</h2>
-      <div class="btn-grid">
-        <button class="vehicle-btn pixel-btn" data-vehicle="sports">
-          <span class="vehicle-icon sports-icon"></span>
-          <span class="btn-label">Sports Car</span>
-        </button>
-        <button class="vehicle-btn pixel-btn" data-vehicle="truck">
-          <span class="vehicle-icon truck-icon"></span>
-          <span class="btn-label">Truck</span>
-        </button>
-        <button class="vehicle-btn pixel-btn" data-vehicle="limo">
-          <span class="vehicle-icon limo-icon"></span>
-          <span class="btn-label">Limo</span>
-        </button>
-      </div>
+  </div>
+
+  <!-- ====== GARAGE PANEL — 3D turntable preview + vehicle/color selection ====== -->
+  <div id="garage-panel">
+    <p id="garage-map-label" class="garage-map-badge">MAP: DAY</p>
+
+    <!-- Vehicle Cycler -->
+    <div class="cycler-row">
+      <button id="prev-vehicle" class="cycle-btn">&#9664;</button>
+      <span id="vehicle-name-label">Sports Car</span>
+      <button id="next-vehicle" class="cycle-btn">&#9654;</button>
     </div>
 
-    <!-- Stage 4: Car Garage (Color) -->
-    <div id="stage-car" class="menu-stage" style="display:none">
-      <h2 class="stage-title">GARAGE</h2>
+    <!-- Color strip: picker + Rainbow + Galaxy -->
+    <div class="color-strip">
+      <label class="picker-label">COLOR</label>
+      <input type="color" id="car-color-input" value="#33cc55">
+      <button class="car-btn swatch-btn rainbow-swatch" data-color="rainbow" title="Rainbow"></button>
+      <button class="car-btn swatch-btn galaxy-swatch"  data-color="galaxy"  title="Galaxy"></button>
+    </div>
 
-      <!-- Color picker row -->
-      <div class="garage-picker-row">
-        <label class="picker-label" for="car-color-input">CUSTOM COLOR</label>
-        <input type="color" id="car-color-input" value="#33cc55">
-        <button id="btn-pick-color" class="garage-go-btn">GO</button>
-      </div>
+    <!-- Launch -->
+    <button id="btn-go" class="big-btn garage-go-big">GO!</button>
+  </div>
 
-      <!-- OR divider -->
-      <div class="garage-divider">- OR CHOOSE A SPECIAL -</div>
-
-      <!-- Special buttons -->
-      <div class="btn-grid">
-        <button class="car-btn pixel-btn" data-color="rainbow">
-          <span class="color-swatch rainbow-swatch"></span>
-          <span class="btn-label">Rainbow</span>
-        </button>
-        <button class="car-btn pixel-btn" data-color="galaxy">
-          <span class="color-swatch galaxy-swatch"></span>
-          <span class="btn-label">Galaxy</span>
-        </button>
-      </div>
+  <!-- ====== Pause Screen ====== -->
+  <div id="pause-screen">
+    <h2 class="pause-title">PAUSED</h2>
+    <div class="pause-buttons">
+      <button id="resume-btn"        class="big-btn">RESUME</button>
+      <button id="pause-mainmenu-btn" class="go-btn secondary" style="margin-top:14px">MAIN MENU</button>
     </div>
   </div>
 
@@ -108,7 +96,7 @@
     <h2>WRECKED</h2>
     <p class="final-score">Score: <span id="final-score-value">0</span></p>
     <div class="go-buttons">
-      <button id="retry-btn" class="go-btn">RETRY</button>
+      <button id="retry-btn"    class="go-btn">RETRY</button>
       <button id="mainmenu-btn" class="go-btn secondary">MAIN MENU</button>
     </div>
   </div>
@@ -123,6 +111,8 @@
       <span id="speed-value">0</span>
       <span class="unit">KM/H</span>
     </div>
+    <!-- Pause button top-right -->
+    <button id="pause-btn">&#9646;&#9646;</button>
     <div id="near-miss-popup"></div>
   </div>
 

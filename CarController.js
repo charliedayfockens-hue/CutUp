@@ -466,7 +466,9 @@ export class CarController {
     for (const pivot of this.frontWheelPivots) pivot.rotation.y = 0;
   }
 
-  get absSpeed() { return Math.abs(this.speed); }
-  get posX()     { return this.playerGroup.position.x; }
-  get posZ()     { return this.playerGroup.position.z; }
+  get absSpeed()   { return Math.abs(this.speed); }
+  get posX()       { return this.playerGroup.position.x; }
+  get posZ()       { return this.playerGroup.position.z; }
+  // Exposed for camera Z-roll: -1 (left), 0 (straight), +1 (right)
+  get lateralDir() { return this._lateralDir; }
 }

@@ -1,99 +1,116 @@
-// Menu.js — Multi-stage CRT-style menu overlay
-// Stage 1: Main (Play)
-// Stage 2: Map Select (Snow, Desert, Rain, Dynamic)
-// Stage 3: Vehicle Type (Sports Car, Truck, Limo)
-// Stage 4: Garage (Color picker + Rainbow / Galaxy specials)
-// Game Over (Retry, Main Menu) — handled externally
+// Menu.js — Two-stage menu + independent garage panel
+// Flow: Main ─► Map Select ─► Garage Panel (turntable) ─► Gameplay
+
+const VEHICLES      = ['sports', 'limo'];
+const VEHICLE_NAMES = { sports: 'Sports Car', limo: 'Limo' };
+const THEME_LABELS  = { day: 'Day', snow: 'Snow', desert: 'Desert', rain: 'Rain', dynamic: 'Dynamic' };
 
 export class Menu {
-  constructor(onStart, onPreview) {
-    this._onStart   = onStart;             // callback(theme, carColor, vehicleType)
-    this._onPreview = onPreview || null;   // callback(theme, vehicleType, carColor) — live garage turntable
+  constructor(onStart, onGaragePreview) {
+    this._onStart         = onStart;           // (theme, carColor, vehicleType)
+    this._onGaragePreview = onGaragePreview;   // (theme, vehicleType, carColor)
 
-    this._selectedTheme   = 'day';
-    this._selectedCar     = '#33cc55';
-    this._selectedVehicle = 'sports';
+    this._selectedTheme = 'day';
+    this._selectedCar   = '#33cc55';
+    this._vehicleIndex  = 0;
 
     // DOM refs
-    this._overlay      = document.getElementById('start-screen');
-    this._stageMain    = document.getElementById('stage-main');
-    this._stageMap     = document.getElementById('stage-map');
-    this._stageVehicle = document.getElementById('stage-vehicle');
-    this._stageCar     = document.getElementById('stage-car');
-    this._colorInput   = document.getElementById('car-color-input');
+    this._startScreen   = document.getElementById('start-screen');
+    this._garagePanel   = document.getElementById('garage-panel');
+    this._vehicleLabel  = document.getElementById('vehicle-name-label');
+    this._mapBadge      = document.getElementById('garage-map-label');
+    this._colorInput    = document.getElementById('car-color-input');
 
-    // Stage 1: Play button → map select
+    // ── Stage 1: Play ───────────────────────────────────────────
     document.getElementById('btn-play').addEventListener('click', () => {
       this._showStage('map');
     });
 
-    // Stage 2: Map select → vehicle select
+    // ── Stage 2: Map Select → open Garage panel ─────────────────
     document.querySelectorAll('.map-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this._selectedTheme = btn.dataset.theme;
-        document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        this._showStage('vehicle');
+        this._enterGarage();
       });
     });
 
-    // Stage 3: Vehicle type → garage (triggers turntable preview)
-    document.querySelectorAll('.vehicle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._selectedVehicle = btn.dataset.vehicle;
-        document.querySelectorAll('.vehicle-btn').forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        // Start the 3D garage turntable for this vehicle
-        if (this._onPreview) {
-          this._onPreview(this._selectedTheme, this._selectedVehicle, this._selectedCar);
-        }
-        this._showStage('car');
-      });
+    // ── Garage: Vehicle cycler ───────────────────────────────────
+    document.getElementById('prev-vehicle').addEventListener('click', () => {
+      this._vehicleIndex = (this._vehicleIndex - 1 + VEHICLES.length) % VEHICLES.length;
+      this._syncPreview();
+    });
+    document.getElementById('next-vehicle').addEventListener('click', () => {
+      this._vehicleIndex = (this._vehicleIndex + 1) % VEHICLES.length;
+      this._syncPreview();
     });
 
-    // Stage 4: Live color picker preview
+    // ── Garage: Color picker (live) ──────────────────────────────
     this._colorInput.addEventListener('input', () => {
-      if (this._onPreview) {
-        this._onPreview(this._selectedTheme, this._selectedVehicle, this._colorInput.value);
-      }
+      // Clicking the native color picker deselects any swatch
+      document.querySelectorAll('.swatch-btn').forEach(b => b.classList.remove('active'));
+      this._selectedCar = this._colorInput.value;
+      this._syncPreview();
     });
 
-    // Stage 4a: Color picker "GO" button — set color and launch
-    document.getElementById('btn-pick-color').addEventListener('click', () => {
-      this._selectedCar = this._colorInput.value;
+    // ── Garage: Special color swatches ───────────────────────────
+    document.querySelectorAll('.car-btn.swatch-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.swatch-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._selectedCar = btn.dataset.color;  // 'rainbow' or 'galaxy'
+        this._syncPreview();
+      });
+    });
+
+    // ── Garage: GO — launch game ─────────────────────────────────
+    document.getElementById('btn-go').addEventListener('click', () => {
       this._launch();
     });
+  }
 
-    // Stage 4b: Special color buttons (Rainbow, Galaxy) — update preview then launch
-    document.querySelectorAll('.car-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._selectedCar = btn.dataset.color;
-        if (this._onPreview) {
-          this._onPreview(this._selectedTheme, this._selectedVehicle, this._selectedCar);
-        }
-        this._launch();
-      });
-    });
+  // ── Helpers ─────────────────────────────────────────────────────
+
+  get _currentVehicle() { return VEHICLES[this._vehicleIndex]; }
+
+  _enterGarage() {
+    // Reset selections to defaults
+    this._vehicleIndex = 0;
+    this._selectedCar  = '#33cc55';
+    this._colorInput.value = '#33cc55';
+    document.querySelectorAll('.swatch-btn').forEach(b => b.classList.remove('active'));
+
+    // Update map badge label
+    this._mapBadge.textContent = `MAP: ${THEME_LABELS[this._selectedTheme] || this._selectedTheme.toUpperCase()}`;
+
+    // Hide start-screen, reveal garage panel
+    this._startScreen.style.display = 'none';
+    this._garagePanel.classList.add('visible');
+
+    // Kick off turntable
+    this._syncPreview();
+  }
+
+  _syncPreview() {
+    this._vehicleLabel.textContent = VEHICLE_NAMES[this._currentVehicle];
+    if (this._onGaragePreview) {
+      this._onGaragePreview(this._selectedTheme, this._currentVehicle, this._selectedCar);
+    }
   }
 
   _launch() {
-    this.hide();
-    this._onStart(this._selectedTheme, this._selectedCar, this._selectedVehicle);
+    this._garagePanel.classList.remove('visible');
+    this._onStart(this._selectedTheme, this._selectedCar, this._currentVehicle);
   }
 
   _showStage(stage) {
-    this._stageMain.style.display    = stage === 'main'    ? 'flex' : 'none';
-    this._stageMap.style.display     = stage === 'map'     ? 'flex' : 'none';
-    this._stageVehicle.style.display = stage === 'vehicle' ? 'flex' : 'none';
-    this._stageCar.style.display     = stage === 'car'     ? 'flex' : 'none';
+    document.getElementById('stage-main').style.display = stage === 'main' ? 'flex' : 'none';
+    document.getElementById('stage-map').style.display  = stage === 'map'  ? 'flex' : 'none';
   }
 
+  // Called externally (e.g. from goToMainMenu)
   show() {
-    this._overlay.style.display = 'flex';
+    this._garagePanel.classList.remove('visible');
+    this._startScreen.style.display = 'flex';
     this._showStage('main');
-  }
-
-  hide() {
-    this._overlay.style.display = 'none';
   }
 }
