@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { World } from './World.js';
-import { CarController, BINDINGS } from './CarController.js';
+import { CarController, BINDINGS, galaxyMat } from './CarController.js';
 import { TrafficManager } from './TrafficManager.js';
 import { Menu } from './Menu.js';
 import { CarEditor } from './CarEditor.js';
@@ -215,8 +215,21 @@ function onGaragePreview(theme, vehicleType, carColor, carId) {
     // Player group is hidden so only the editor's group is visible (no duplicates).
     const saved = menu.saveManager.getCar(activeCarId);
     if (saved) {
-      editor.importParts(saved.parts, saved.mainColor || currentCar);
-      editor.applyMainColor(currentCar);
+      const baseColor = (currentCar === 'rainbow' || currentCar === 'galaxy')
+        ? '#33cc55'
+        : currentCar;
+      editor.importParts(saved.parts, baseColor);
+      if (currentCar === 'galaxy') {
+        // Apply galaxy shader to colorable parts in the custom car group
+        editor.customCarGroup.traverse(child => {
+          if (child.isMesh && child.userData.isColorable) {
+            child.material = galaxyMat;
+          }
+        });
+      } else if (currentCar !== 'rainbow') {
+        editor.applyMainColor(currentCar);
+      }
+      // rainbow: let updateGarage animate colors each frame
     }
     editor.customCarGroup.position.set(0, 0, 0);
     editor.customCarGroup.rotation.set(0, 0, 0);
@@ -241,6 +254,18 @@ function updateGarage(dt) {
     if (activeCarId && editor.customCarGroup.visible) {
       // Custom car: rotate the editor group directly
       editor.customCarGroup.rotation.y += 0.8 * dt;
+      // Animate special color modes on the custom car group
+      if (currentCar === 'rainbow') {
+        const hsl = (Date.now() * 0.0005) % 1;
+        const color = new THREE.Color().setHSL(hsl, 1, 0.5);
+        editor.customCarGroup.traverse(child => {
+          if (child.isMesh && child.userData.isColorable && child.material.color) {
+            child.material.color.copy(color);
+          }
+        });
+      } else if (currentCar === 'galaxy') {
+        galaxyMat.uniforms.uTime.value = performance.now() * 0.001;
+      }
     } else {
       // Stock car: rotate the player group
       player.playerGroup.rotation.y += 0.8 * dt;
@@ -406,6 +431,7 @@ function startGame(theme, carColor, vehicleType, carId) {
       editor.customCarGroup.visible = false; // avoid double-rendering
       player.attachCustomGroup(editor.getCustomCarGroup());
       player.useCustomCar();
+      player.setColor(currentCar);  // apply solid/rainbow/galaxy to custom parts
       player.playerGroup.visible = true;
     }
   } else {
@@ -434,6 +460,7 @@ function retryGame() {
       editor.customCarGroup.visible = false;
       player.attachCustomGroup(editor.getCustomCarGroup());
       player.useCustomCar();
+      player.setColor(currentCar);  // apply solid/rainbow/galaxy to custom parts
       player.playerGroup.visible = true;
     }
   } else {

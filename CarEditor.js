@@ -16,15 +16,18 @@ const PART_TYPES = {
   sphere:   () => new THREE.SphereGeometry(0.5, 16, 12),
 };
 
-// Wheel geometry — matches CarController wheel proportions
-const WHEEL_GEO = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+// Wheel geometry
+const WHEEL_GEO = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
+
+// Matte black wheel material — stays black regardless of car color
+const wheelBlackMat = new THREE.MeshToonMaterial({ color: 0x111111 });
 
 // Exact wheel positions and names per spec
 const WHEEL_DEFS = [
-  { name: 'wheel_fl', x: -1.1, y: 0.4, z:  1.5 },   // Front Left
-  { name: 'wheel_fr', x:  1.1, y: 0.4, z:  1.5 },   // Front Right
-  { name: 'wheel_bl', x: -1.1, y: 0.4, z: -1.5 },   // Back Left
-  { name: 'wheel_br', x:  1.1, y: 0.4, z: -1.5 },   // Back Right
+  { name: 'wheel_fl', x: -0.8, y: 0.4, z:  1.5 },   // Front Left
+  { name: 'wheel_fr', x:  0.8, y: 0.4, z:  1.5 },   // Front Right
+  { name: 'wheel_bl', x: -0.8, y: 0.4, z: -1.5 },   // Back Left
+  { name: 'wheel_br', x:  0.8, y: 0.4, z: -1.5 },   // Back Right
 ];
 
 // Shared toon material for spawned parts
@@ -211,16 +214,15 @@ export class CarEditor {
 
   _spawnDefaultWheels() {
     for (const def of WHEEL_DEFS) {
-      const mat  = editorMat.clone();
-      mat.color.set(this.mainColor);
-      const mesh = new THREE.Mesh(WHEEL_GEO, mat);
+      // Matte black — never follows car color (clone so dispose is safe)
+      const mesh = new THREE.Mesh(WHEEL_GEO, wheelBlackMat.clone());
       mesh.name            = def.name;
       mesh.rotation.z      = Math.PI / 2;
       mesh.castShadow      = true;
       mesh.position.set(def.x, def.y, def.z);
 
       // userData flags for gameplay and editor
-      mesh.userData.isColorable  = true;
+      mesh.userData.isColorable  = false;  // stays matte black
       mesh.userData.isWheel      = true;
       mesh.userData.isDeletable  = false;
 
@@ -234,8 +236,8 @@ export class CarEditor {
         name:        def.name,
         type:        'cylinder',
         isDefault:   true,
-        isColorable: true,
-        color:       this.mainColor,
+        isColorable: false,
+        color:       '#111111',
         metadata: {
           pos:   { x: def.x, y: def.y, z: def.z },
           rot:   { x: 0, y: 0, z: 90 },
@@ -473,9 +475,13 @@ export class CarEditor {
       if (!pd.isDefault && this._userPartCount >= MAX_PARTS) continue;
 
       const geo = geoFactory();
-      const mat = editorMat.clone();
-      const col = pd.isColorable ? this.mainColor : (pd.color || '#888888');
-      mat.color.set(col);
+      // Wheels always use matte black; other parts use their saved color
+      const isWheel = !!pd.isDefault;
+      const mat = isWheel ? wheelBlackMat.clone() : editorMat.clone();
+      if (!isWheel) {
+        const col = pd.isColorable ? this.mainColor : (pd.color || '#888888');
+        mat.color.set(col);
+      }
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
 
@@ -490,9 +496,9 @@ export class CarEditor {
       const id = pd.id || nextId();
       mesh.name              = pd.name || '';
       mesh.userData.editorId = id;
-      mesh.userData.isColorable = pd.isColorable !== false;
-      mesh.userData.isWheel     = !!pd.isDefault;
-      mesh.userData.isDeletable = !pd.isDefault;
+      mesh.userData.isColorable = isWheel ? false : (pd.isColorable !== false);
+      mesh.userData.isWheel     = isWheel;
+      mesh.userData.isDeletable = !isWheel;
 
       if (pd.isDefault) {
         // Restore rotation for wheels
@@ -506,9 +512,9 @@ export class CarEditor {
         id,
         name:        pd.name || null,
         type:        pd.type,
-        isDefault:   !!pd.isDefault,
-        isColorable: pd.isColorable !== false,
-        color:       col,
+        isDefault:   isWheel,
+        isColorable: isWheel ? false : (pd.isColorable !== false),
+        color:       isWheel ? '#111111' : (pd.isColorable ? this.mainColor : (pd.color || '#888888')),
         metadata: {
           pos:   { ...pd.pos },
           rot:   { ...pd.rot },

@@ -7,10 +7,6 @@ const BINDINGS = {
   'd': { move:  1, wheel:  30 },
 };
 
-// ---- Snap Lanes for arcade lane-switch movement ----
-const SNAP_LANES = [-4, 0, 4];   // X world coordinates for L / C / R
-const SNAP_LERP  = 0.22;         // fraction per frame — snappy but smooth
-
 // ---- Tuning ----
 const MAX_SPEED       = 280;   // km/h
 const ACCEL           = 48;    // km/h per second
@@ -81,7 +77,7 @@ function addOutline(parent, geo, scale) {
 const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
 const bigWGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 16);
 
-export { BINDINGS };
+export { BINDINGS, galaxyMat };
 
 // ============================================================
 // Vehicle dimensions used for collision and camera
@@ -103,11 +99,6 @@ export class CarController {
     this.speed = 0;
     this._targetX = 0;
     this._lateralDir = 0;
-
-    // Lane-snap state
-    this._laneIndex   = 1;      // centre lane (0=left, 1=centre, 2=right)
-    this._prevLeft    = false;  // edge-detect to avoid repeat fire
-    this._prevRight   = false;
 
     // Vehicle type
     this._vehicleType = 'sports';
@@ -208,22 +199,41 @@ export class CarController {
     if (value === 'rainbow') {
       this._colorMode = 'rainbow';
       this._rainbowHue = 0;
-      if (this._chassisMesh) this._chassisMesh.material = bodyMat;
+      if (!this._usingCustom && this._chassisMesh) {
+        this._chassisMesh.material = bodyMat;
+      }
     } else if (value === 'galaxy') {
       this._colorMode = 'galaxy';
-      if (this._chassisMesh) this._chassisMesh.material = galaxyMat;
-    } else if (typeof value === 'string' && value.startsWith('#')) {
-      if (this._chassisMesh) this._chassisMesh.material = bodyMat;
-      bodyMat.color.set(value);
+      if (this._usingCustom) {
+        this.playerGroup.traverse(child => {
+          if (child.isMesh && child.userData.isColorable) {
+            child.material = galaxyMat;
+          }
+        });
+      } else {
+        if (this._chassisMesh) this._chassisMesh.material = galaxyMat;
+      }
     } else {
-      const colorMap = {
-        green:  0x33cc55,
-        yellow: 0xffdd00,
-        red:    0xff2200,
-        blue:   0x3366ff,
-      };
-      if (this._chassisMesh) this._chassisMesh.material = bodyMat;
-      bodyMat.color.setHex(colorMap[value] || 0x33cc55);
+      const hex = (typeof value === 'string' && value.startsWith('#')) ? value : null;
+      const colorMap = { green: 0x33cc55, yellow: 0xffdd00, red: 0xff2200, blue: 0x3366ff };
+      if (this._usingCustom) {
+        const col = hex || '#33cc55';
+        this.playerGroup.traverse(child => {
+          if (child.isMesh && child.userData.isColorable) {
+            if (!child.material.color) {
+              child.material = new THREE.MeshToonMaterial({ color: 0x888888 });
+            }
+            child.material.color.set(col);
+          }
+        });
+      } else {
+        if (this._chassisMesh) this._chassisMesh.material = bodyMat;
+        if (hex) {
+          bodyMat.color.set(hex);
+        } else {
+          bodyMat.color.setHex(colorMap[value] || 0x33cc55);
+        }
+      }
     }
   }
 
@@ -454,42 +464,38 @@ export class CarController {
 
     const speedMs = this.speed / 3.6;
 
-    // ── Arcade lane-snap movement ──────────────────────────────
-    // Rising-edge detection so a single tap moves exactly one lane.
-    const curLeft  = !!(input.left  || input.moveDir < 0);
-    const curRight = !!(input.right || input.moveDir > 0);
+    // ── Smooth continuous steering (Gold Standard — do not revert) ──
+    const specs = VEHICLE_SPECS[this._vehicleType] || VEHICLE_SPECS.sports;
+    this._lateralDir = 0;
+    if (input.left  || input.moveDir < 0) this._lateralDir = -1;
+    if (input.right || input.moveDir > 0) this._lateralDir =  1;
 
-    if (curLeft && !this._prevLeft) {
-      this._laneIndex = Math.max(0, this._laneIndex - 1);
-    }
-    if (curRight && !this._prevRight) {
-      this._laneIndex = Math.min(SNAP_LANES.length - 1, this._laneIndex + 1);
-    }
-    this._prevLeft  = curLeft;
-    this._prevRight = curRight;
-
-    // Lane X is the target; lerp towards it for a smooth slide
-    this._targetX = SNAP_LANES[this._laneIndex];
+    this._targetX += this._lateralDir * specs.lateralSpeed * dt;
+    const limit = ROAD_HALF - 1.6;
+    this._targetX = Math.max(-limit, Math.min(limit, this._targetX));
     this.playerGroup.position.x = THREE.MathUtils.lerp(
-      this.playerGroup.position.x, this._targetX, SNAP_LERP
+      this.playerGroup.position.x, this._targetX, 0.2
     );
-
-    // Expose lateral direction for camera roll
-    this._lateralDir = curLeft ? -1 : curRight ? 1 : 0;
 
     // Forward
     this.playerGroup.position.z += speedMs * dt;
     this.playerGroup.position.y = 0;
     this.playerGroup.rotation.set(0, 0, 0);
 
-    // ── Front wheel steering direction (literal values) ────────
-    // A / Left  → wheels turn left  (positive Y rotation)
-    // D / Right → wheels turn right (negative Y rotation)
+    // ── Front wheel steering ────────────────────────────────────
     let targetWheelY = 0;
-    if (curLeft)  targetWheelY =  0.5;
-    if (curRight) targetWheelY = -0.5;
+    if (this._lateralDir < 0) targetWheelY =  0.5;
+    if (this._lateralDir > 0) targetWheelY = -0.5;
     for (const pivot of this.frontWheelPivots) {
       pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, targetWheelY, Math.min(1, 12 * dt));
+    }
+
+    // Custom car wheel steering by mesh name
+    if (this._usingCustom) {
+      const fl = this.playerGroup.getObjectByName('wheel_fl');
+      const fr = this.playerGroup.getObjectByName('wheel_fr');
+      if (fl) fl.rotation.y = THREE.MathUtils.lerp(fl.rotation.y, targetWheelY, Math.min(1, 12 * dt));
+      if (fr) fr.rotation.y = THREE.MathUtils.lerp(fr.rotation.y, targetWheelY, Math.min(1, 12 * dt));
     }
 
     // Wheel spin
@@ -497,18 +503,28 @@ export class CarController {
     for (const w of this.allWheels) w.rotation.x += spin;
 
     // Color mode updates
-    if (this._colorMode === 'rainbow') {
-      bodyMat.color.setHSL((Date.now() * 0.0005) % 1, 1, 0.5);
-    } else if (this._colorMode === 'galaxy') {
-      galaxyMat.uniforms.uTime.value = performance.now() * 0.001;
-    }
+    this._tickColorAnimations();
   }
 
   // ---- Tick shader/color animations without advancing physics ----
   // Called during garage turntable preview so rainbow/galaxy stay alive.
   tickAnimations() {
+    this._tickColorAnimations();
+  }
+
+  _tickColorAnimations() {
     if (this._colorMode === 'rainbow') {
-      bodyMat.color.setHSL((Date.now() * 0.0005) % 1, 1, 0.5);
+      const hsl = (Date.now() * 0.0005) % 1;
+      if (this._usingCustom) {
+        const color = new THREE.Color().setHSL(hsl, 1, 0.5);
+        this.playerGroup.traverse(child => {
+          if (child.isMesh && child.userData.isColorable && child.material.color) {
+            child.material.color.copy(color);
+          }
+        });
+      } else {
+        bodyMat.color.setHSL(hsl, 1, 0.5);
+      }
     } else if (this._colorMode === 'galaxy') {
       galaxyMat.uniforms.uTime.value = performance.now() * 0.001;
     }
@@ -519,10 +535,7 @@ export class CarController {
     this.speed       = 0;
     this._lateralDir = 0;
     this.nitroActive = false;
-    this._laneIndex  = 1;         // centre lane
-    this._prevLeft   = false;
-    this._prevRight  = false;
-    this._targetX    = SNAP_LANES[1]; // centre = 0
+    this._targetX    = laneToX(1); // centre lane
     this.playerGroup.position.set(this._targetX, 0, 0);
     this.playerGroup.rotation.set(0, 0, 0);
     for (const pivot of this.frontWheelPivots) pivot.rotation.y = 0;
