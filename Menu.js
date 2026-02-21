@@ -245,13 +245,12 @@ export class Menu {
     const cyclerRow = document.getElementById('garage-cycler-row');
     const editorBtn = document.getElementById('btn-editor');
 
-    if (this._mode === 'stock') {
-      if (cyclerRow) cyclerRow.style.display = 'flex';
-      if (editorBtn) editorBtn.style.display = 'none';
-    } else {
-      // Custom: no cycler, show editor button
-      if (cyclerRow) cyclerRow.style.display = 'none';
+    // Vehicle model was chosen in gallery — hide cycler in garage for all modes
+    if (cyclerRow) cyclerRow.style.display = 'none';
+    if (this._mode === 'custom') {
       if (editorBtn) editorBtn.style.display = 'block';
+    } else {
+      if (editorBtn) editorBtn.style.display = 'none';
     }
 
     // Hide start screen, show garage
