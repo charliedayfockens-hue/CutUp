@@ -18,7 +18,7 @@
   <!-- CRT Scanline overlay -->
   <div id="crt-overlay"></div>
 
-  <!-- ====== START SCREEN — Stage 1: Main + Stage 2: Map ====== -->
+  <!-- ====== START SCREEN — Multi-stage menu ====== -->
   <div id="start-screen">
 
     <!-- Stage 1: Main -->
@@ -36,7 +36,57 @@
       <button id="btn-play" class="big-btn">PLAY</button>
     </div>
 
-    <!-- Stage 2: Map Select -->
+    <!-- Stage 2: Mode Select (Stock vs Custom) -->
+    <div id="stage-mode" class="menu-stage" style="display:none">
+      <h2 class="stage-title">SELECT MODE</h2>
+      <div class="mode-cards">
+        <button id="btn-mode-stock" class="mode-card pixel-btn">
+          <span class="mode-icon">&#127950;</span>
+          <span class="mode-title">STOCK</span>
+          <span class="mode-desc">Pre-built cars</span>
+        </button>
+        <button id="btn-mode-custom" class="mode-card pixel-btn">
+          <span class="mode-icon">&#9881;</span>
+          <span class="mode-title">CUSTOM</span>
+          <span class="mode-desc">Your builds</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stage 3a: Stock Vehicle Gallery -->
+    <div id="stage-stock" class="menu-stage" style="display:none">
+      <h2 class="stage-title">SELECT VEHICLE</h2>
+      <div class="stock-cards">
+        <button class="stock-card pixel-btn" data-vehicle="sports">
+          <span class="stock-icon">&#127950;</span>
+          <span class="stock-name">Sports Car</span>
+          <span class="stock-desc">Fast &amp; nimble</span>
+        </button>
+        <button class="stock-card pixel-btn" data-vehicle="limo">
+          <span class="stock-icon">&#127952;</span>
+          <span class="stock-name">Limo</span>
+          <span class="stock-desc">Long &amp; luxurious</span>
+        </button>
+      </div>
+      <button id="btn-stock-back" class="go-btn secondary back-btn">&#8592; BACK</button>
+    </div>
+
+    <!-- Stage 3b: Custom Car Gallery -->
+    <div id="stage-custom" class="menu-stage" style="display:none">
+      <h2 class="stage-title">CUSTOM BUILDS</h2>
+      <!-- New build button — always visible -->
+      <button id="btn-new-build" class="big-btn new-build-btn">+ NEW BUILD</button>
+      <!-- Scrollable grid of saved builds -->
+      <div id="custom-car-grid" class="custom-car-grid">
+        <!-- Cards injected by Menu.js -->
+      </div>
+      <p id="custom-empty-hint" class="custom-empty-hint" style="display:none">
+        No custom builds yet.<br>Click + NEW BUILD to start!
+      </p>
+      <button id="btn-custom-back" class="go-btn secondary back-btn">&#8592; BACK</button>
+    </div>
+
+    <!-- Stage 4: Map Select -->
     <div id="stage-map" class="menu-stage" style="display:none">
       <h2 class="stage-title">SELECT MAP</h2>
       <div class="btn-grid">
@@ -57,16 +107,17 @@
           <span class="btn-label">Dynamic</span>
         </button>
       </div>
+      <button id="btn-map-back" class="go-btn secondary back-btn">&#8592; BACK</button>
     </div>
 
   </div>
 
-  <!-- ====== GARAGE PANEL — 3D turntable preview + vehicle/color selection ====== -->
+  <!-- ====== GARAGE PANEL — 3D turntable preview ====== -->
   <div id="garage-panel">
     <p id="garage-map-label" class="garage-map-badge">MAP: DAY</p>
 
-    <!-- Vehicle Cycler -->
-    <div class="cycler-row">
+    <!-- Vehicle Cycler (stock mode only) -->
+    <div class="cycler-row" id="garage-cycler-row">
       <button id="prev-vehicle" class="cycle-btn">&#9664;</button>
       <span id="vehicle-name-label">Sports Car</span>
       <button id="next-vehicle" class="cycle-btn">&#9654;</button>
@@ -80,94 +131,47 @@
       <button class="car-btn swatch-btn galaxy-swatch"  data-color="galaxy"  title="Galaxy"></button>
     </div>
 
-    <!-- Save Slots -->
-    <div class="save-slots-row">
-      <label class="picker-label">SAVES</label>
-      <button class="save-slot-btn" id="save-slot-1" data-slot="1">Slot 1: Empty</button>
-      <button class="save-slot-btn" id="save-slot-2" data-slot="2">Slot 2: Empty</button>
-      <button class="save-slot-btn" id="save-slot-3" data-slot="3">Slot 3: Empty</button>
-    </div>
-
-    <!-- Action buttons row -->
-    <div class="garage-actions-row">
-      <button id="btn-editor" class="go-btn editor-btn">EDITOR</button>
-      <button id="btn-save" class="go-btn save-btn">SAVE</button>
-    </div>
+    <!-- Editor button (custom mode only) -->
+    <button id="btn-editor" class="go-btn editor-btn" style="display:none">EDITOR</button>
 
     <!-- Launch -->
     <button id="btn-go" class="big-btn garage-go-big">GO!</button>
   </div>
 
-  <!-- ====== EDITOR PANEL — Car Architect UI ====== -->
+  <!-- ====== EDITOR PANEL — TransformControls-based car architect ====== -->
   <div id="editor-panel">
     <div class="editor-header">
       <h3>CAR EDITOR</h3>
       <span id="editor-parts-count">0 / 20</span>
     </div>
 
+    <!-- Active transform mode indicator -->
+    <div id="editor-mode-indicator" class="editor-mode-badge">W MOVE</div>
+
+    <!-- Mode buttons -->
+    <div class="editor-mode-row">
+      <button id="editor-btn-move"   class="editor-mode-btn" title="W">&#8597; MOVE</button>
+      <button id="editor-btn-rotate" class="editor-mode-btn" title="E">&#8635; ROT</button>
+      <button id="editor-btn-scale"  class="editor-mode-btn" title="R">&#8596; SCALE</button>
+    </div>
+
     <!-- Spawn buttons -->
+    <div class="editor-section-label">SPAWN</div>
     <div class="editor-spawn-row">
       <button id="editor-spawn-box" class="editor-spawn-btn">+ Box</button>
       <button id="editor-spawn-cyl" class="editor-spawn-btn">+ Cyl</button>
       <button id="editor-spawn-sph" class="editor-spawn-btn">+ Sph</button>
     </div>
 
-    <!-- Parts list -->
+    <!-- Parts list (scrollable hierarchy) -->
+    <div class="editor-section-label">HIERARCHY</div>
     <div id="editor-parts-list" class="editor-parts-list"></div>
 
-    <!-- Transform: Position -->
-    <div class="editor-section-label">POSITION</div>
-    <div class="editor-slider-row">
-      <label>X</label>
-      <input type="range" id="editor-pos-x" min="-5" max="5" step="0.05" value="0">
-      <span id="editor-pos-x-val">0.00</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Y</label>
-      <input type="range" id="editor-pos-y" min="-2" max="5" step="0.05" value="0.5">
-      <span id="editor-pos-y-val">0.50</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Z</label>
-      <input type="range" id="editor-pos-z" min="-5" max="5" step="0.05" value="0">
-      <span id="editor-pos-z-val">0.00</span>
-    </div>
-
-    <!-- Transform: Rotation (degrees) -->
-    <div class="editor-section-label">ROTATION</div>
-    <div class="editor-slider-row">
-      <label>X</label>
-      <input type="range" id="editor-rot-x" min="-180" max="180" step="1" value="0">
-      <span id="editor-rot-x-val">0.00</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Y</label>
-      <input type="range" id="editor-rot-y" min="-180" max="180" step="1" value="0">
-      <span id="editor-rot-y-val">0.00</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Z</label>
-      <input type="range" id="editor-rot-z" min="-180" max="180" step="1" value="0">
-      <span id="editor-rot-z-val">0.00</span>
-    </div>
-
-    <!-- Transform: Scale -->
-    <div class="editor-section-label">SCALE</div>
-    <div class="editor-slider-row">
-      <label>X</label>
-      <input type="range" id="editor-scale-x" min="0.05" max="5" step="0.05" value="1">
-      <span id="editor-scale-x-val">1.00</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Y</label>
-      <input type="range" id="editor-scale-y" min="0.05" max="5" step="0.05" value="1">
-      <span id="editor-scale-y-val">1.00</span>
-    </div>
-    <div class="editor-slider-row">
-      <label>Z</label>
-      <input type="range" id="editor-scale-z" min="0.05" max="5" step="0.05" value="1">
-      <span id="editor-scale-z-val">1.00</span>
-    </div>
+    <!-- Read-only transform info (gizmo is the source of truth) -->
+    <div class="editor-section-label">TRANSFORM</div>
+    <div class="editor-info-row"><span class="info-label">POS</span><span id="info-pos" class="info-val">—</span></div>
+    <div class="editor-info-row"><span class="info-label">ROT</span><span id="info-rot" class="info-val">—</span></div>
+    <div class="editor-info-row"><span class="info-label">SCL</span><span id="info-scale" class="info-val">—</span></div>
 
     <!-- Material -->
     <div class="editor-section-label">MATERIAL</div>
@@ -181,12 +185,18 @@
 
     <!-- Part actions -->
     <div class="editor-action-row">
-      <button id="editor-delete-part" class="editor-action-btn danger">DELETE PART</button>
-      <button id="editor-clear-all" class="editor-action-btn danger">CLEAR ALL</button>
+      <button id="editor-delete-part" class="editor-action-btn danger" disabled>DELETE</button>
+      <button id="editor-clear-all"   class="editor-action-btn danger">CLEAR</button>
     </div>
 
-    <!-- Done -->
-    <button id="editor-done-btn" class="big-btn editor-done">DONE</button>
+    <!-- Keyboard hint -->
+    <p class="editor-key-hint"><kbd>W</kbd> Move &nbsp; <kbd>E</kbd> Rotate &nbsp; <kbd>R</kbd> Scale<br><kbd>Del</kbd> Delete &nbsp; Click to select</p>
+
+    <!-- Save & Done -->
+    <div class="editor-action-row">
+      <button id="editor-save-btn" class="editor-action-btn">SAVE</button>
+      <button id="editor-done-btn" class="big-btn editor-done">DONE</button>
+    </div>
   </div>
 
   <!-- ====== Pause Screen ====== -->

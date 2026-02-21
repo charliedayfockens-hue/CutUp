@@ -1,200 +1,306 @@
-// CarEditor.js — Unity-style custom car architect
-// Allows spawning up to 20 primitives with full transform control,
-// isColorable flag, and hierarchy management via customCarGroup.
+// CarEditor.js — Unity-style custom car architect (v3)
+// Uses THREE.TransformControls for gizmo-based transforms.
+// W = Translate | E = Rotate | R = Scale
+// Default 4 wheels are auto-spawned, locked in position, non-deletable.
+// userData flags: isColorable, isWheel, isDeletable
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OrbitControls }     from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
-const MAX_PARTS = 20;
+const MAX_PARTS = 20; // excludes the 4 default wheels
+
 const PART_TYPES = {
   box:      () => new THREE.BoxGeometry(1, 1, 1),
   cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
   sphere:   () => new THREE.SphereGeometry(0.5, 16, 12),
 };
 
-// Toon material for editor parts (matches game aesthetic)
+// Wheel geometry — matches CarController wheel proportions
+const WHEEL_GEO = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+
+// Exact wheel positions and names per spec
+const WHEEL_DEFS = [
+  { name: 'wheel_fl', x: -1.1, y: 0.4, z:  1.5 },   // Front Left
+  { name: 'wheel_fr', x:  1.1, y: 0.4, z:  1.5 },   // Front Right
+  { name: 'wheel_bl', x: -1.1, y: 0.4, z: -1.5 },   // Back Left
+  { name: 'wheel_br', x:  1.1, y: 0.4, z: -1.5 },   // Back Right
+];
+
+// Shared toon material for spawned parts
 const editorMat = new THREE.MeshToonMaterial({ color: 0x888888 });
 
 let _idCounter = 0;
 function nextId() { return `part_${++_idCounter}`; }
 
 export class CarEditor {
-  constructor(scene, camera, canvas, renderer) {
-    this.scene = scene;
-    this.camera = camera;
-    this.canvas = canvas;
-    this.renderer = renderer;
+  /**
+   * @param {THREE.Scene}    scene
+   * @param {THREE.Camera}   camera
+   * @param {THREE.Renderer} renderer   — renderer.domElement = canvas
+   * @param {SaveManager}    saveManager
+   */
+  constructor(scene, camera, renderer, saveManager) {
+    this.scene       = scene;
+    this.camera      = camera;
+    this.renderer    = renderer;
+    this._canvas     = renderer.domElement;
+    this.saveManager = saveManager || null;
 
     // ---- Parts storage ----
-    // Each entry: { mesh: THREE.Mesh, id: string, isColorable: boolean,
-    //               type: string, color: string,
-    //               metadata: { pos:{x,y,z}, rot:{x,y,z}, scale:{x,y,z} } }
+    // Each entry: { mesh, id, name?, type, isDefault, isColorable, color, metadata }
     this.parts = [];
     this.selectedPartId = null;
 
-    // ---- Custom car group (attached to gameplay later) ----
+    // ---- ID of the car currently being edited (null = new build) ----
+    this.editingCarId = null;
+
+    // ---- Car group used in gameplay ----
     this.customCarGroup = new THREE.Group();
     this.customCarGroup.visible = false;
     this.scene.add(this.customCarGroup);
 
-    // ---- Editor environment ----
-    this._gridHelper = null;
+    // ---- Editor-only scene objects ----
+    this._gridHelper    = null;
     this._editorAmbient = null;
-    this._editorDirectional = null;
-    this._orbitControls = null;
+    this._editorDir     = null;
 
-    // ---- Raycaster for part selection ----
+    // ---- Controls ----
+    this._orbitControls     = null;
+    this._transformControls = null;
+    this._currentMode       = 'translate';
+
+    // ---- Raycaster ----
     this._raycaster = new THREE.Raycaster();
-    this._pointer = new THREE.Vector2();
+    this._pointer   = new THREE.Vector2();
 
-    // ---- Selection highlight ----
-    this._outlineMesh = null;
-
-    // ---- Main car color (from garage) ----
+    // ---- Main color (synced from garage) ----
     this.mainColor = '#33cc55';
 
-    // ---- State ----
+    // ---- Active state ----
     this.active = false;
 
-    // ---- Build the UI panel ----
-    this._panel = document.getElementById('editor-panel');
+    // ---- Bound handlers ----
+    this._onPointerDown = this._handlePointerDown.bind(this);
+    this._onKeyDown     = this._handleKeyDown.bind(this);
+
+    // ---- Callbacks ----
+    this.onDone = null;   // () => void — called when DONE is pressed
+
+    this._initControls();
     this._buildUI();
-
-    // ---- Build orbit controls ----
-    this._orbitControls = new OrbitControls(this.camera, this.canvas);
-    this._orbitControls.enableDamping = true;
-    this._orbitControls.dampingFactor = 0.12;
-    this._orbitControls.minDistance = 3;
-    this._orbitControls.maxDistance = 20;
-    this._orbitControls.target.set(0, 0.8, 0);
-    this._orbitControls.enabled = false;
-
-    // ---- Click-to-select ----
-    this._onPointerDown = this._onPointerDown.bind(this);
+    this._spawnDefaultWheels();
   }
 
   // ============================================================
-  //  ENTER / EXIT editor mode
+  //  INIT CONTROLS (once, not per-enter)
   // ============================================================
 
-  enter(mainColor) {
-    this.active = true;
-    this.mainColor = mainColor || this.mainColor;
+  _initControls() {
+    this._orbitControls = new OrbitControls(this.camera, this._canvas);
+    this._orbitControls.enableDamping = true;
+    this._orbitControls.dampingFactor = 0.12;
+    this._orbitControls.minDistance   = 3;
+    this._orbitControls.maxDistance   = 20;
+    this._orbitControls.target.set(0, 0.8, 0);
+    this._orbitControls.enabled       = false;
 
-    // Show the group and center it
+    this._transformControls = new TransformControls(this.camera, this._canvas);
+    this._transformControls.setMode(this._currentMode);
+    this.scene.add(this._transformControls);
+
+    // Disable orbit while dragging a gizmo
+    this._transformControls.addEventListener('dragging-changed', e => {
+      this._orbitControls.enabled = this.active && !e.value;
+    });
+
+    // Sync metadata every time the gizmo changes the object
+    this._transformControls.addEventListener('objectChange', () => {
+      this._syncMetadataFromMesh();
+      this._refreshInfoPanel();
+    });
+  }
+
+  // ============================================================
+  //  ENTER / EXIT
+  // ============================================================
+
+  /**
+   * @param {string}      mainColor  — hex color or 'rainbow'/'galaxy'
+   * @param {string|null} carId      — existing car ID to load, or null for new
+   */
+  enter(mainColor, carId) {
+    this.active    = true;
+    this.mainColor = mainColor || this.mainColor;
+    this.editingCarId = carId || null;
+
+    if (carId && this.saveManager) {
+      const saved = this.saveManager.getCar(carId);
+      if (saved) {
+        this.importParts(saved.parts, saved.mainColor || this.mainColor);
+      }
+    } else {
+      // Fresh canvas — keep only the default wheels
+      this._resetToDefaultWheels();
+    }
+
+    this.applyMainColor(this.mainColor);
+
     this.customCarGroup.visible = true;
     this.customCarGroup.position.set(0, 0, 0);
     this.customCarGroup.rotation.set(0, 0, 0);
 
-    // Build editor environment
-    this._setupEditorEnv();
+    this._setupEnv();
 
-    // Enable orbit controls
     this._orbitControls.enabled = true;
     this._orbitControls.target.set(0, 0.8, 0);
-
-    // Reset camera for editor
-    this.camera.position.set(4, 3, 5);
+    this.camera.position.set(5, 4, 6);
     this.camera.lookAt(0, 0.8, 0);
 
-    // Show UI panel
-    this._panel.style.display = 'flex';
+    const panel = document.getElementById('editor-panel');
+    if (panel) panel.style.display = 'flex';
 
-    // Add click listener
-    this.canvas.addEventListener('pointerdown', this._onPointerDown);
+    document.addEventListener('keydown', this._onKeyDown);
+    this._canvas.addEventListener('pointerdown', this._onPointerDown);
 
-    // Update parts count badge
     this._updatePartsCount();
-    this._updateSliderValues();
+    this._updatePartsList();
+    this._refreshInfoPanel();
+    this._updateModeIndicator();
   }
 
   exit() {
     this.active = false;
-
-    // Tear down editor env
-    this._teardownEditorEnv();
-
-    // Disable orbit controls
+    this._transformControls.detach();
+    this._teardownEnv();
     this._orbitControls.enabled = false;
 
-    // Hide UI
-    this._panel.style.display = 'none';
+    const panel = document.getElementById('editor-panel');
+    if (panel) panel.style.display = 'none';
 
-    // Remove click listener
-    this.canvas.removeEventListener('pointerdown', this._onPointerDown);
-
-    // Clear selection highlight
-    this._clearHighlight();
+    document.removeEventListener('keydown', this._onKeyDown);
+    this._canvas.removeEventListener('pointerdown', this._onPointerDown);
   }
 
   // ============================================================
-  //  EDITOR ENVIRONMENT (grid, lights)
+  //  ENVIRONMENT
   // ============================================================
 
-  _setupEditorEnv() {
-    // Grid
+  _setupEnv() {
     this._gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
     this.scene.add(this._gridHelper);
 
-    // Editor-specific lighting
-    this._editorAmbient = new THREE.AmbientLight(0xffffff, 0.6);
+    this._editorAmbient = new THREE.AmbientLight(0xffffff, 0.65);
     this.scene.add(this._editorAmbient);
 
-    this._editorDirectional = new THREE.DirectionalLight(0xffffff, 0.8);
-    this._editorDirectional.position.set(5, 10, 5);
-    this.scene.add(this._editorDirectional);
+    this._editorDir = new THREE.DirectionalLight(0xffffff, 0.85);
+    this._editorDir.position.set(5, 10, 5);
+    this.scene.add(this._editorDir);
   }
 
-  _teardownEditorEnv() {
-    if (this._gridHelper) {
-      this.scene.remove(this._gridHelper);
-      this._gridHelper.dispose();
-      this._gridHelper = null;
+  _teardownEnv() {
+    for (const obj of [this._gridHelper, this._editorAmbient, this._editorDir]) {
+      if (obj) { this.scene.remove(obj); if (obj.dispose) obj.dispose(); }
     }
-    if (this._editorAmbient) {
-      this.scene.remove(this._editorAmbient);
-      this._editorAmbient = null;
+    this._gridHelper = this._editorAmbient = this._editorDir = null;
+  }
+
+  // ============================================================
+  //  DEFAULT WHEELS — auto-spawned, fixed, non-deletable
+  // ============================================================
+
+  _spawnDefaultWheels() {
+    for (const def of WHEEL_DEFS) {
+      const mat  = editorMat.clone();
+      mat.color.set(this.mainColor);
+      const mesh = new THREE.Mesh(WHEEL_GEO, mat);
+      mesh.name            = def.name;
+      mesh.rotation.z      = Math.PI / 2;
+      mesh.castShadow      = true;
+      mesh.position.set(def.x, def.y, def.z);
+
+      // userData flags for gameplay and editor
+      mesh.userData.isColorable  = true;
+      mesh.userData.isWheel      = true;
+      mesh.userData.isDeletable  = false;
+
+      const id = nextId();
+      mesh.userData.editorId = id;
+      this.customCarGroup.add(mesh);
+
+      this.parts.push({
+        mesh,
+        id,
+        name:        def.name,
+        type:        'cylinder',
+        isDefault:   true,
+        isColorable: true,
+        color:       this.mainColor,
+        metadata: {
+          pos:   { x: def.x, y: def.y, z: def.z },
+          rot:   { x: 0, y: 0, z: 90 },
+          scale: { x: 1, y: 1, z: 1 },
+        },
+      });
     }
-    if (this._editorDirectional) {
-      this.scene.remove(this._editorDirectional);
-      this._editorDirectional = null;
+  }
+
+  _resetToDefaultWheels() {
+    // Remove all parts (both user and default) then re-spawn fresh wheels
+    this._transformControls.detach();
+    this.selectedPartId = null;
+
+    for (const p of this.parts) {
+      this.customCarGroup.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
     }
+    this.parts = [];
+    this._spawnDefaultWheels();
   }
 
   // ============================================================
   //  PART MANAGEMENT
   // ============================================================
 
+  get _userPartCount() {
+    return this.parts.filter(p => !p.isDefault).length;
+  }
+
   spawnPart(type) {
-    if (this.parts.length >= MAX_PARTS) return null;
+    if (this._userPartCount >= MAX_PARTS) return null;
     if (!PART_TYPES[type]) return null;
 
-    const geo = PART_TYPES[type]();
-    const mat = editorMat.clone();
+    const geo  = PART_TYPES[type]();
+    const mat  = editorMat.clone();
     mat.color.set(this.mainColor);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.position.set(0, 0.5, 0);
 
+    // userData flags
+    mesh.userData.isColorable = true;
+    mesh.userData.isWheel     = false;
+    mesh.userData.isDeletable = true;
+
     const id = nextId();
     mesh.userData.editorId = id;
-
     this.customCarGroup.add(mesh);
 
     const entry = {
       mesh,
       id,
       type,
+      isDefault:   false,
       isColorable: true,
-      color: this.mainColor,
+      color:       this.mainColor,
       metadata: {
-        pos: { x: 0, y: 0.5, z: 0 },
-        rot: { x: 0, y: 0, z: 0 },
-        scale: { x: 1, y: 1, z: 1 },
+        pos:   { x: 0, y: 0.5, z: 0 },
+        rot:   { x: 0, y: 0,   z: 0 },
+        scale: { x: 1, y: 1,   z: 1 },
       },
     };
     this.parts.push(entry);
-
     this.selectPart(id);
     this._updatePartsCount();
     return entry;
@@ -203,178 +309,173 @@ export class CarEditor {
   removePart(id) {
     const idx = this.parts.findIndex(p => p.id === id);
     if (idx === -1) return;
-
     const entry = this.parts[idx];
-    this.customCarGroup.remove(entry.mesh);
-    if (entry.mesh.geometry) entry.mesh.geometry.dispose();
-    if (entry.mesh.material) entry.mesh.material.dispose();
-
-    this.parts.splice(idx, 1);
+    if (entry.isDefault) return; // wheels are locked
 
     if (this.selectedPartId === id) {
+      this._transformControls.detach();
       this.selectedPartId = null;
-      this._clearHighlight();
-      this._updateSliderValues();
     }
+
+    this.customCarGroup.remove(entry.mesh);
+    entry.mesh.geometry.dispose();
+    entry.mesh.material.dispose();
+    this.parts.splice(idx, 1);
+
     this._updatePartsCount();
     this._updatePartsList();
+    this._refreshInfoPanel();
   }
 
   removeSelected() {
-    if (this.selectedPartId) {
-      this.removePart(this.selectedPartId);
-    }
+    if (this.selectedPartId) this.removePart(this.selectedPartId);
   }
 
   selectPart(id) {
+    const part = this.parts.find(p => p.id === id);
+    if (!part) return;
+
     this.selectedPartId = id;
-    this._updateSliderValues();
+
+    // Gizmo only attaches to non-default, non-wheel parts
+    if (!part.isDefault && !part.mesh.userData.isWheel) {
+      this._transformControls.attach(part.mesh);
+    } else {
+      this._transformControls.detach();
+    }
+
     this._updatePartsList();
-    this._highlightSelected();
+    this._refreshInfoPanel();
   }
 
   getSelected() {
     return this.parts.find(p => p.id === this.selectedPartId) || null;
   }
 
-  // ============================================================
-  //  TRANSFORM UPDATES
-  // ============================================================
+  clearUserParts() {
+    this._transformControls.detach();
+    this.selectedPartId = null;
 
-  updatePartTransform(property, axis, value) {
-    const part = this.getSelected();
-    if (!part) return;
-
-    const v = parseFloat(value);
-    if (isNaN(v)) return;
-
-    if (property === 'pos') {
-      part.mesh.position[axis] = v;
-      part.metadata.pos[axis] = v;
-    } else if (property === 'rot') {
-      const rad = THREE.MathUtils.degToRad(v);
-      part.mesh.rotation[axis] = rad;
-      part.metadata.rot[axis] = v; // store degrees
-    } else if (property === 'scale') {
-      part.mesh.scale[axis] = Math.max(0.05, v);
-      part.metadata.scale[axis] = Math.max(0.05, v);
+    for (const p of this.parts.filter(p => !p.isDefault)) {
+      this.customCarGroup.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
     }
+    this.parts = this.parts.filter(p => p.isDefault);
+
+    this._updatePartsCount();
+    this._updatePartsList();
+    this._refreshInfoPanel();
   }
+
+  // ============================================================
+  //  TRANSFORM MODE
+  // ============================================================
+
+  setMode(mode) {
+    this._currentMode = mode;
+    this._transformControls.setMode(mode);
+    this._updateModeIndicator();
+  }
+
+  _updateModeIndicator() {
+    const el = document.getElementById('editor-mode-indicator');
+    if (!el) return;
+    const labels = { translate: 'W MOVE', rotate: 'E ROTATE', scale: 'R SCALE' };
+    el.textContent = labels[this._currentMode] || this._currentMode.toUpperCase();
+  }
+
+  // ============================================================
+  //  METADATA SYNC
+  // ============================================================
+
+  _syncMetadataFromMesh() {
+    const part = this.getSelected();
+    if (!part || part.isDefault) return;
+
+    const m = part.mesh;
+    part.metadata.pos   = { x: m.position.x, y: m.position.y, z: m.position.z };
+    part.metadata.rot   = {
+      x: THREE.MathUtils.radToDeg(m.rotation.x),
+      y: THREE.MathUtils.radToDeg(m.rotation.y),
+      z: THREE.MathUtils.radToDeg(m.rotation.z),
+    };
+    part.metadata.scale = { x: m.scale.x, y: m.scale.y, z: m.scale.z };
+  }
+
+  // ============================================================
+  //  COLOR
+  // ============================================================
 
   setPartColorable(isColorable) {
     const part = this.getSelected();
     if (!part) return;
     part.isColorable = isColorable;
-
+    part.mesh.userData.isColorable = isColorable;
     if (isColorable) {
-      part.mesh.material.color.set(this.mainColor);
       part.color = this.mainColor;
+      part.mesh.material.color.set(this.mainColor);
     }
-    // If not colorable, color stays at whatever hex is assigned
+    this._refreshInfoPanel();
   }
 
   setPartColor(hex) {
     const part = this.getSelected();
-    if (!part) return;
+    if (!part || part.isColorable) return;
     part.color = hex;
     part.mesh.material.color.set(hex);
   }
 
-  // ---- Apply main color to all colorable parts ----
   applyMainColor(color) {
     this.mainColor = color;
-    for (const part of this.parts) {
-      if (part.isColorable) {
-        part.color = color;
-        part.mesh.material.color.set(color);
+    for (const p of this.parts) {
+      if (p.isColorable) {
+        p.color = color;
+        p.mesh.material.color.set(color);
+        p.mesh.userData.isColorable = true;
       }
     }
   }
 
   // ============================================================
-  //  SELECTION HIGHLIGHT
-  // ============================================================
-
-  _highlightSelected() {
-    this._clearHighlight();
-    const part = this.getSelected();
-    if (!part) return;
-
-    const geo = part.mesh.geometry.clone();
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x00ff00,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.6,
-    });
-    this._outlineMesh = new THREE.Mesh(geo, mat);
-    this._outlineMesh.scale.copy(part.mesh.scale).multiplyScalar(1.05);
-    this._outlineMesh.position.copy(part.mesh.position);
-    this._outlineMesh.rotation.copy(part.mesh.rotation);
-    this.customCarGroup.add(this._outlineMesh);
-  }
-
-  _clearHighlight() {
-    if (this._outlineMesh) {
-      this.customCarGroup.remove(this._outlineMesh);
-      if (this._outlineMesh.geometry) this._outlineMesh.geometry.dispose();
-      if (this._outlineMesh.material) this._outlineMesh.material.dispose();
-      this._outlineMesh = null;
-    }
-  }
-
-  // ============================================================
-  //  CLICK-TO-SELECT (Raycasting)
-  // ============================================================
-
-  _onPointerDown(event) {
-    if (!this.active) return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    this._pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this._pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this._raycaster.setFromCamera(this._pointer, this.camera);
-
-    const meshes = this.parts.map(p => p.mesh);
-    const intersects = this._raycaster.intersectObjects(meshes, false);
-
-    if (intersects.length > 0) {
-      const hit = intersects[0].object;
-      const id = hit.userData.editorId;
-      if (id) this.selectPart(id);
-    }
-  }
-
-  // ============================================================
-  //  EXPORT / IMPORT (for SaveManager)
+  //  EXPORT / IMPORT
   // ============================================================
 
   exportParts() {
     return this.parts.map(p => ({
-      id: p.id,
-      type: p.type,
+      id:          p.id,
+      name:        p.name || null,
+      type:        p.type,
+      isDefault:   p.isDefault,
       isColorable: p.isColorable,
-      color: p.color,
-      pos: { ...p.metadata.pos },
-      rot: { ...p.metadata.rot },
+      color:       p.color,
+      pos:   { ...p.metadata.pos },
+      rot:   { ...p.metadata.rot },
       scale: { ...p.metadata.scale },
     }));
   }
 
   importParts(partsData, mainColor) {
-    // Clear existing parts
-    this.clearAllParts();
+    this._resetToDefaultWheels();
     this.mainColor = mainColor || this.mainColor;
 
-    for (const pd of partsData) {
-      if (this.parts.length >= MAX_PARTS) break;
-      if (!PART_TYPES[pd.type]) continue;
+    // Remove auto-spawned defaults so we re-create from saved data
+    for (const p of [...this.parts]) {
+      this.customCarGroup.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+    }
+    this.parts = [];
 
-      const geo = PART_TYPES[pd.type]();
+    for (const pd of (partsData || [])) {
+      const geoFactory = PART_TYPES[pd.type];
+      if (!geoFactory) continue;
+      if (!pd.isDefault && this._userPartCount >= MAX_PARTS) continue;
+
+      const geo = geoFactory();
       const mat = editorMat.clone();
-      const color = pd.isColorable ? this.mainColor : (pd.color || '#888888');
-      mat.color.set(color);
+      const col = pd.isColorable ? this.mainColor : (pd.color || '#888888');
+      mat.color.set(col);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
 
@@ -382,179 +483,190 @@ export class CarEditor {
       mesh.rotation.set(
         THREE.MathUtils.degToRad(pd.rot.x),
         THREE.MathUtils.degToRad(pd.rot.y),
-        THREE.MathUtils.degToRad(pd.rot.z)
+        THREE.MathUtils.degToRad(pd.rot.z),
       );
       mesh.scale.set(pd.scale.x, pd.scale.y, pd.scale.z);
 
       const id = pd.id || nextId();
+      mesh.name              = pd.name || '';
       mesh.userData.editorId = id;
+      mesh.userData.isColorable = pd.isColorable !== false;
+      mesh.userData.isWheel     = !!pd.isDefault;
+      mesh.userData.isDeletable = !pd.isDefault;
+
+      if (pd.isDefault) {
+        // Restore rotation for wheels
+        mesh.rotation.z = Math.PI / 2;
+      }
 
       this.customCarGroup.add(mesh);
 
       this.parts.push({
         mesh,
         id,
-        type: pd.type,
-        isColorable: pd.isColorable,
-        color: pd.isColorable ? this.mainColor : (pd.color || '#888888'),
+        name:        pd.name || null,
+        type:        pd.type,
+        isDefault:   !!pd.isDefault,
+        isColorable: pd.isColorable !== false,
+        color:       col,
         metadata: {
-          pos: { ...pd.pos },
-          rot: { ...pd.rot },
+          pos:   { ...pd.pos },
+          rot:   { ...pd.rot },
           scale: { ...pd.scale },
         },
       });
     }
-    this._updatePartsCount();
-    this._updatePartsList();
-  }
 
-  clearAllParts() {
-    this._clearHighlight();
-    for (const p of this.parts) {
-      this.customCarGroup.remove(p.mesh);
-      if (p.mesh.geometry) p.mesh.geometry.dispose();
-      if (p.mesh.material) p.mesh.material.dispose();
+    // If import had no defaults, re-spawn wheels
+    if (!this.parts.some(p => p.isDefault)) {
+      this._spawnDefaultWheels();
     }
-    this.parts = [];
-    this.selectedPartId = null;
+
     this._updatePartsCount();
     this._updatePartsList();
   }
 
-  // ---- Return the group for gameplay ----
+  hasCustomParts() {
+    return this._userPartCount > 0;
+  }
+
   getCustomCarGroup() {
     return this.customCarGroup;
   }
 
-  hasCustomParts() {
-    return this.parts.length > 0;
+  // ============================================================
+  //  SAVE
+  // ============================================================
+
+  _saveCurrentBuild() {
+    if (!this.saveManager) return null;
+
+    const data = {
+      name:        `Build ${this.saveManager.getAllCars().length + 1}`,
+      mainColor:   this.mainColor,
+      vehicleType: 'custom',
+      parts:       this.exportParts(),
+    };
+
+    if (this.editingCarId) {
+      this.saveManager.updateCar(this.editingCarId, data);
+      return this.editingCarId;
+    } else {
+      const newId = this.saveManager.saveCar(data);
+      this.editingCarId = newId;
+      return newId;
+    }
   }
 
   // ============================================================
-  //  UPDATE (called each frame when editor is active)
+  //  UPDATE (main loop)
   // ============================================================
 
   update() {
     if (!this.active) return;
     this._orbitControls.update();
+  }
 
-    // Keep highlight in sync with selected part transforms
-    if (this._outlineMesh && this.selectedPartId) {
-      const part = this.getSelected();
-      if (part) {
-        this._outlineMesh.position.copy(part.mesh.position);
-        this._outlineMesh.rotation.copy(part.mesh.rotation);
-        this._outlineMesh.scale.copy(part.mesh.scale).multiplyScalar(1.05);
-      }
+  // ============================================================
+  //  INPUT HANDLERS
+  // ============================================================
+
+  _handleKeyDown(e) {
+    if (!this.active) return;
+    if (e.target && e.target.tagName === 'INPUT') return;
+
+    switch (e.code) {
+      case 'KeyW': e.preventDefault(); this.setMode('translate'); break;
+      case 'KeyE': e.preventDefault(); this.setMode('rotate');    break;
+      case 'KeyR': e.preventDefault(); this.setMode('scale');     break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        this.removeSelected();
+        break;
+    }
+  }
+
+  _handlePointerDown(e) {
+    if (!this.active) return;
+    if (this._transformControls.dragging) return;
+
+    const rect = this._canvas.getBoundingClientRect();
+    this._pointer.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    this._pointer.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+
+    this._raycaster.setFromCamera(this._pointer, this.camera);
+
+    const meshes = this.parts.map(p => p.mesh);
+    const hits   = this._raycaster.intersectObjects(meshes, false);
+
+    if (hits.length > 0) {
+      const id = hits[0].object.userData.editorId;
+      if (id) this.selectPart(id);
+    } else {
+      this.selectedPartId = null;
+      this._transformControls.detach();
+      this._updatePartsList();
+      this._refreshInfoPanel();
     }
   }
 
   // ============================================================
-  //  UI PANEL CONSTRUCTION
+  //  UI
   // ============================================================
 
   _buildUI() {
-    // All UI elements are in the #editor-panel defined in index.html.
-    // We attach listeners here.
+    const on = (id, ev, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(ev, fn);
+    };
 
-    // Spawn buttons
-    const spawnBox = document.getElementById('editor-spawn-box');
-    const spawnCyl = document.getElementById('editor-spawn-cyl');
-    const spawnSph = document.getElementById('editor-spawn-sph');
+    on('editor-spawn-box', 'click', () => this.spawnPart('box'));
+    on('editor-spawn-cyl', 'click', () => this.spawnPart('cylinder'));
+    on('editor-spawn-sph', 'click', () => this.spawnPart('sphere'));
 
-    if (spawnBox) spawnBox.addEventListener('click', () => this.spawnPart('box'));
-    if (spawnCyl) spawnCyl.addEventListener('click', () => this.spawnPart('cylinder'));
-    if (spawnSph) spawnSph.addEventListener('click', () => this.spawnPart('sphere'));
+    on('editor-btn-move',   'click', () => this.setMode('translate'));
+    on('editor-btn-rotate', 'click', () => this.setMode('rotate'));
+    on('editor-btn-scale',  'click', () => this.setMode('scale'));
 
-    // Delete button
-    const delBtn = document.getElementById('editor-delete-part');
-    if (delBtn) delBtn.addEventListener('click', () => this.removeSelected());
+    on('editor-delete-part', 'click', () => this.removeSelected());
+    on('editor-clear-all',   'click', () => {
+      if (confirm('Clear all custom parts? Wheels will remain.')) this.clearUserParts();
+    });
 
-    // Clear all button
-    const clearBtn = document.getElementById('editor-clear-all');
-    if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllParts());
+    on('editor-colorable', 'change', () => {
+      const cb = document.getElementById('editor-colorable');
+      if (cb) this.setPartColorable(cb.checked);
+    });
 
-    // Transform sliders
-    const axes = ['x', 'y', 'z'];
-    for (const prop of ['pos', 'rot', 'scale']) {
-      for (const axis of axes) {
-        const slider = document.getElementById(`editor-${prop}-${axis}`);
-        if (slider) {
-          slider.addEventListener('input', () => {
-            this.updatePartTransform(prop, axis, slider.value);
-            this._highlightSelected();
-          });
+    on('editor-part-color', 'input', () => {
+      const inp = document.getElementById('editor-part-color');
+      if (inp) this.setPartColor(inp.value);
+    });
+
+    // SAVE — persist to SaveManager and stay in editor
+    on('editor-save-btn', 'click', () => {
+      const id = this._saveCurrentBuild();
+      if (id) {
+        const btn = document.getElementById('editor-save-btn');
+        if (btn) {
+          const orig = btn.textContent;
+          btn.textContent = '✓ SAVED';
+          setTimeout(() => { btn.textContent = orig; }, 1200);
         }
       }
-    }
+    });
 
-    // isColorable checkbox
-    const colorableCheck = document.getElementById('editor-colorable');
-    if (colorableCheck) {
-      colorableCheck.addEventListener('change', () => {
-        this.setPartColorable(colorableCheck.checked);
-      });
-    }
-
-    // Part color (for non-colorable parts)
-    const partColorInput = document.getElementById('editor-part-color');
-    if (partColorInput) {
-      partColorInput.addEventListener('input', () => {
-        this.setPartColor(partColorInput.value);
-      });
-    }
-
-    // Done button (exit editor)
-    const doneBtn = document.getElementById('editor-done-btn');
-    if (doneBtn) {
-      doneBtn.addEventListener('click', () => {
-        if (this.onDone) this.onDone();
-      });
-    }
-  }
-
-  // ---- Sync slider values to the selected part ----
-  _updateSliderValues() {
-    const part = this.getSelected();
-    const axes = ['x', 'y', 'z'];
-
-    for (const prop of ['pos', 'rot', 'scale']) {
-      for (const axis of axes) {
-        const slider = document.getElementById(`editor-${prop}-${axis}`);
-        if (!slider) continue;
-
-        if (part) {
-          slider.value = part.metadata[prop][axis];
-          slider.disabled = false;
-        } else {
-          slider.value = prop === 'scale' ? 1 : 0;
-          slider.disabled = true;
-        }
-
-        // Update adjacent value label
-        const label = document.getElementById(`editor-${prop}-${axis}-val`);
-        if (label) label.textContent = parseFloat(slider.value).toFixed(2);
-      }
-    }
-
-    // isColorable checkbox
-    const colorableCheck = document.getElementById('editor-colorable');
-    if (colorableCheck) {
-      colorableCheck.checked = part ? part.isColorable : true;
-      colorableCheck.disabled = !part;
-    }
-
-    // Part color input
-    const partColorInput = document.getElementById('editor-part-color');
-    if (partColorInput) {
-      partColorInput.value = part ? part.color : '#888888';
-      partColorInput.disabled = !part || part.isColorable;
-    }
+    // DONE — save + close editor
+    on('editor-done-btn', 'click', () => {
+      const savedId = this._saveCurrentBuild();
+      if (this.onDone) this.onDone(savedId);
+    });
   }
 
   _updatePartsCount() {
-    const badge = document.getElementById('editor-parts-count');
-    if (badge) badge.textContent = `${this.parts.length} / ${MAX_PARTS}`;
+    const el = document.getElementById('editor-parts-count');
+    if (el) el.textContent = `${this._userPartCount} / ${MAX_PARTS}`;
   }
 
   _updatePartsList() {
@@ -565,13 +677,48 @@ export class CarEditor {
     for (const part of this.parts) {
       const item = document.createElement('div');
       item.className = 'editor-part-item';
+      if (part.isDefault) item.classList.add('default-part');
       if (part.id === this.selectedPartId) item.classList.add('selected');
-      item.textContent = `${part.type} (${part.id})`;
+      item.textContent = part.isDefault
+        ? `⚙ ${part.name || 'wheel'} (locked)`
+        : `${part.type} · ${part.id}`;
       item.addEventListener('click', () => this.selectPart(part.id));
       list.appendChild(item);
     }
   }
 
-  // ---- Callback: set by main.js to handle editor exit ----
-  onDone = null;
+  _refreshInfoPanel() {
+    const part = this.getSelected();
+
+    const cbColorable = document.getElementById('editor-colorable');
+    if (cbColorable) {
+      cbColorable.checked  = part ? part.isColorable : true;
+      cbColorable.disabled = !part || part.isDefault;
+    }
+
+    const colorPicker = document.getElementById('editor-part-color');
+    if (colorPicker) {
+      colorPicker.value    = part ? part.color : '#888888';
+      colorPicker.disabled = !part || part.isColorable || part.isDefault;
+    }
+
+    if (part && !part.isDefault) {
+      const fmt = v => v.toFixed(2);
+      const m   = part.mesh;
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('info-pos',   `${fmt(m.position.x)}, ${fmt(m.position.y)}, ${fmt(m.position.z)}`);
+      set('info-rot',   `${fmt(THREE.MathUtils.radToDeg(m.rotation.x))}°, ${fmt(THREE.MathUtils.radToDeg(m.rotation.y))}°, ${fmt(THREE.MathUtils.radToDeg(m.rotation.z))}°`);
+      set('info-scale', `${fmt(m.scale.x)}, ${fmt(m.scale.y)}, ${fmt(m.scale.z)}`);
+    } else {
+      for (const id of ['info-pos', 'info-rot', 'info-scale']) {
+        const el = document.getElementById(id); if (el) el.textContent = '—';
+      }
+    }
+
+    const delBtn = document.getElementById('editor-delete-part');
+    if (delBtn) {
+      delBtn.style.opacity = (part && !part.isDefault) ? '1' : '0.3';
+      delBtn.disabled = !part || part.isDefault;
+    }
+  }
 }

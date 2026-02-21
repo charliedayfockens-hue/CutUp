@@ -3,9 +3,13 @@ import { ROAD_HALF, laneToX } from './World.js';
 
 // ---- Direct Mapping Steering ----
 const BINDINGS = {
-  'a': { move: 1, wheel: -30 },
-  'd': { move: -1, wheel: 30 },
+  'a': { move: -1, wheel: -30 },
+  'd': { move:  1, wheel:  30 },
 };
+
+// ---- Snap Lanes for arcade lane-switch movement ----
+const SNAP_LANES = [-4, 0, 4];   // X world coordinates for L / C / R
+const SNAP_LERP  = 0.22;         // fraction per frame — snappy but smooth
 
 // ---- Tuning ----
 const MAX_SPEED       = 280;   // km/h
@@ -99,6 +103,11 @@ export class CarController {
     this.speed = 0;
     this._targetX = 0;
     this._lateralDir = 0;
+
+    // Lane-snap state
+    this._laneIndex   = 1;      // centre lane (0=left, 1=centre, 2=right)
+    this._prevLeft    = false;  // edge-detect to avoid repeat fire
+    this._prevRight   = false;
 
     // Vehicle type
     this._vehicleType = 'sports';
@@ -444,37 +453,41 @@ export class CarController {
     }
 
     const speedMs = this.speed / 3.6;
-    const specs = VEHICLE_SPECS[this._vehicleType] || VEHICLE_SPECS.sports;
 
-    // Lateral movement — snappy steering with high lerp alpha
-    this._lateralDir = 0;
-    if (input.moveDir !== undefined && input.moveDir !== 0) {
-      this._lateralDir = input.moveDir;
+    // ── Arcade lane-snap movement ──────────────────────────────
+    // Rising-edge detection so a single tap moves exactly one lane.
+    const curLeft  = !!(input.left  || input.moveDir < 0);
+    const curRight = !!(input.right || input.moveDir > 0);
+
+    if (curLeft && !this._prevLeft) {
+      this._laneIndex = Math.max(0, this._laneIndex - 1);
     }
+    if (curRight && !this._prevRight) {
+      this._laneIndex = Math.min(SNAP_LANES.length - 1, this._laneIndex + 1);
+    }
+    this._prevLeft  = curLeft;
+    this._prevRight = curRight;
 
-    this._targetX += this._lateralDir * specs.lateralSpeed * dt;
-
-    // Barrier clamp
-    const limit = ROAD_HALF - 1.6;
-    if (this._targetX < -limit) this._targetX = -limit;
-    if (this._targetX >  limit) this._targetX =  limit;
-
-    // Snappy lateral lerp — high alpha (0.2) for responsive feel
+    // Lane X is the target; lerp towards it for a smooth slide
+    this._targetX = SNAP_LANES[this._laneIndex];
     this.playerGroup.position.x = THREE.MathUtils.lerp(
-      this.playerGroup.position.x, this._targetX, 0.2
+      this.playerGroup.position.x, this._targetX, SNAP_LERP
     );
+
+    // Expose lateral direction for camera roll
+    this._lateralDir = curLeft ? -1 : curRight ? 1 : 0;
 
     // Forward
     this.playerGroup.position.z += speedMs * dt;
     this.playerGroup.position.y = 0;
     this.playerGroup.rotation.set(0, 0, 0);
 
-    // Front wheel steering — INVERTED FIX:
-    // Positive _lateralDir (moving left/+X) now turns wheels visually left (+Y rotation)
-    // This aligns the wheel visual direction with the car's movement direction.
-    const targetWheelY = this._lateralDir !== 0
-      ? THREE.MathUtils.clamp(this._lateralDir * specs.wheelTurnMax, -specs.wheelTurnMax, specs.wheelTurnMax)
-      : 0;
+    // ── Front wheel steering direction (literal values) ────────
+    // A / Left  → wheels turn left  (positive Y rotation)
+    // D / Right → wheels turn right (negative Y rotation)
+    let targetWheelY = 0;
+    if (curLeft)  targetWheelY =  0.5;
+    if (curRight) targetWheelY = -0.5;
     for (const pivot of this.frontWheelPivots) {
       pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, targetWheelY, Math.min(1, 12 * dt));
     }
@@ -503,12 +516,14 @@ export class CarController {
 
   // ---- Reset ----
   reset() {
-    this.speed = 0;
+    this.speed       = 0;
     this._lateralDir = 0;
     this.nitroActive = false;
-    const startX = laneToX(1);
-    this._targetX = startX;
-    this.playerGroup.position.set(startX, 0, 0);
+    this._laneIndex  = 1;         // centre lane
+    this._prevLeft   = false;
+    this._prevRight  = false;
+    this._targetX    = SNAP_LANES[1]; // centre = 0
+    this.playerGroup.position.set(this._targetX, 0, 0);
     this.playerGroup.rotation.set(0, 0, 0);
     for (const pivot of this.frontWheelPivots) pivot.rotation.y = 0;
   }

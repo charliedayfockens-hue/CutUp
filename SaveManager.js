@@ -1,93 +1,142 @@
-// SaveManager.js — Persistent save/load system using localStorage
-// JSON Schema: { slotId, carType, mainColor, parts: [{ id, type, isColorable, color, pos, rot, scale }] }
+// SaveManager.js — Infinite persistent save system (v3)
+// Stores an unlimited array of custom car builds under a single localStorage key.
+// Uses unique string IDs (never array indices) for stable references.
 
-const STORAGE_KEY = 'cutup_saves';
-const MAX_SLOTS = 3;
+const STORAGE_KEY = 'racing_custom_cars';
+const ACTIVE_KEY  = 'racing_active_car_id';
+
+function _uid() {
+  return `car_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function _sanitiseParts(parts) {
+  if (!Array.isArray(parts)) return [];
+  return parts.map(p => ({
+    id:          String(p.id || _uid()),
+    type:        p.type        || 'box',
+    isDefault:   !!p.isDefault,
+    isColorable: p.isColorable !== false,
+    color:       p.color       || '#888888',
+    pos:   { x: +(p.pos?.x   ?? 0), y: +(p.pos?.y   ?? 0.5), z: +(p.pos?.z   ?? 0) },
+    rot:   { x: +(p.rot?.x   ?? 0), y: +(p.rot?.y   ?? 0),   z: +(p.rot?.z   ?? 0) },
+    scale: { x: +(p.scale?.x ?? 1), y: +(p.scale?.y ?? 1),   z: +(p.scale?.z ?? 1) },
+  }));
+}
 
 export class SaveManager {
-  constructor() {
-    this._cache = this._readAll();
-  }
+  // ============================================================
+  //  INTERNAL I/O
+  // ============================================================
 
-  // ---- Read all slots from localStorage ----
-  _readAll() {
+  _read() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return {};
-      return JSON.parse(raw);
+      const arr = JSON.parse(raw || '[]');
+      return Array.isArray(arr) ? arr : [];
     } catch {
-      return {};
+      return [];
     }
   }
 
-  _writeAll(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    this._cache = data;
+  _write(arr) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
   }
 
-  // ---- Save to a specific slot (1, 2, or 3) ----
-  saveToSlot(id, data) {
-    if (id < 1 || id > MAX_SLOTS) return false;
-    const all = this._readAll();
-    all[`slot_${id}`] = {
-      slotId: id,
-      carType: data.carType || 'sports',
-      mainColor: data.mainColor || '#33cc55',
-      vehicleType: data.vehicleType || 'sports',
-      parts: (data.parts || []).map(p => ({
-        id: p.id,
-        type: p.type,
-        isColorable: !!p.isColorable,
-        color: p.color || '#888888',
-        pos: { x: p.pos.x, y: p.pos.y, z: p.pos.z },
-        rot: { x: p.rot.x, y: p.rot.y, z: p.rot.z },
-        scale: { x: p.scale.x, y: p.scale.y, z: p.scale.z },
-      })),
-      timestamp: Date.now(),
+  // ============================================================
+  //  CREATE — push a new car and return its ID
+  // ============================================================
+
+  saveCar(data) {
+    const arr = this._read();
+    const entry = {
+      id:          _uid(),
+      name:        data.name        || `Build ${arr.length + 1}`,
+      mainColor:   data.mainColor   || '#33cc55',
+      vehicleType: data.vehicleType || 'custom',
+      parts:       _sanitiseParts(data.parts),
+      savedAt:     Date.now(),
     };
-    this._writeAll(all);
-    return true;
+    arr.push(entry);
+    this._write(arr);
+    this.setActiveCar(entry.id);
+    return entry.id;
   }
 
-  // ---- Load from a specific slot ----
-  loadFromSlot(id) {
-    if (id < 1 || id > MAX_SLOTS) return null;
-    const all = this._readAll();
-    return all[`slot_${id}`] || null;
+  // ============================================================
+  //  UPDATE — overwrite an existing car by ID
+  // ============================================================
+
+  updateCar(id, data) {
+    const arr = this._read();
+    const idx = arr.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    arr[idx] = {
+      ...arr[idx],
+      name:        data.name        ?? arr[idx].name,
+      mainColor:   data.mainColor   ?? arr[idx].mainColor,
+      vehicleType: data.vehicleType ?? arr[idx].vehicleType,
+      parts:       data.parts !== undefined ? _sanitiseParts(data.parts) : arr[idx].parts,
+      savedAt:     Date.now(),
+      id,            // preserve ID
+    };
+    this._write(arr);
   }
 
-  // ---- Delete a slot ----
-  deleteSlot(id) {
-    if (id < 1 || id > MAX_SLOTS) return;
-    const all = this._readAll();
-    delete all[`slot_${id}`];
-    this._writeAll(all);
-  }
+  // ============================================================
+  //  DELETE — remove by ID, fix active pointer if needed
+  // ============================================================
 
-  // ---- Get all slots (for UI display) ----
-  getSlots() {
-    const all = this._readAll();
-    const result = [];
-    for (let i = 1; i <= MAX_SLOTS; i++) {
-      const slot = all[`slot_${i}`] || null;
-      result.push({
-        id: i,
-        empty: !slot,
-        data: slot,
-        label: slot
-          ? `Slot ${i}: ${slot.parts.length} parts`
-          : `Slot ${i}: Empty`,
-      });
+  deleteCar(id) {
+    const arr = this._read().filter(c => c.id !== id);
+    this._write(arr);
+    if (this.getActiveCarId() === id) {
+      this.setActiveCar(arr.length > 0 ? arr[arr.length - 1].id : null);
     }
-    return result;
   }
 
-  // ---- Check if any saves exist ----
+  // ============================================================
+  //  READ
+  // ============================================================
+
+  getCar(id) {
+    return this._read().find(c => c.id === id) ?? null;
+  }
+
+  getAllCars() {
+    return this._read();
+  }
+
   hasSaves() {
-    const all = this._readAll();
-    for (let i = 1; i <= MAX_SLOTS; i++) {
-      if (all[`slot_${i}`]) return true;
-    }
-    return false;
+    return this._read().length > 0;
   }
+
+  // ============================================================
+  //  ACTIVE CAR — persisted separately so it survives tab refreshes
+  // ============================================================
+
+  getActiveCarId() {
+    return localStorage.getItem(ACTIVE_KEY) || null;
+  }
+
+  setActiveCar(id) {
+    if (id) {
+      localStorage.setItem(ACTIVE_KEY, id);
+    } else {
+      localStorage.removeItem(ACTIVE_KEY);
+    }
+  }
+
+  getActiveCar() {
+    const id = this.getActiveCarId();
+    return id ? this.getCar(id) : null;
+  }
+
+  // ============================================================
+  //  LEGACY COMPAT — old Menu.js called these; kept to avoid crashes
+  // ============================================================
+
+  saveToSlot(slotId, data)    { return this.saveCar(data); }
+  loadFromSlot(_slotId)       { return this.getActiveCar(); }
+  getSlots()                  { return []; }
+  get currentActiveIndex()    { return -1; }
 }
