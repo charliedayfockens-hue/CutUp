@@ -18,17 +18,18 @@ let screenShake = 0;
 let currentTheme   = 'day';
 let currentCar     = '#33cc55';
 let currentVehicle = 'sports';
+let activeCarId    = null;   // null = stock, string = custom save ID
 
 // ---- Nitro ----
 let nitroLevel    = 0;   // 0–100
 const NITRO_MAX   = 100;
-const NITRO_DRAIN = 20;  // per second when active
-const NITRO_GAIN_TOP_SPEED = 5;   // per second at max speed
-const NITRO_GAIN_NEAR_MISS = 15;  // per near-miss event
+const NITRO_DRAIN = 20;
+const NITRO_GAIN_TOP_SPEED = 5;
+const NITRO_GAIN_NEAR_MISS = 15;
 
 // ---- Hit-stop ----
-let hitStopTimer = 0;   // seconds remaining
-let gameSpeed    = 1;   // 0.1 during hit-stop, 1 otherwise
+let hitStopTimer = 0;
+let gameSpeed    = 1;
 
 // ============================================================
 //  INPUT — Direct Mapping via BINDINGS
@@ -37,7 +38,6 @@ const keysDown = {};
 const touch = { left: false, right: false, gas: false, brake: false };
 
 document.addEventListener('keydown', e => {
-  // Escape toggles pause (not in editor)
   if (e.code === 'Escape') {
     if (state === 'playing') { pause(); return; }
     if (state === 'paused')  { resume(); return; }
@@ -55,27 +55,15 @@ function getInput() {
   const brake = keysDown['Space'] || touch.brake;
   const nitro = keysDown['ShiftLeft'] || keysDown['ShiftRight'];
 
+  // Lane-based directional intent
+  const left  = keysDown['KeyA'] || keysDown['a'] || keysDown['ArrowLeft']  || touch.left;
+  const right = keysDown['KeyD'] || keysDown['d'] || keysDown['ArrowRight'] || touch.right;
+
   let moveDir = 0;
-  let wheelAngle = 0;
+  if (left)  moveDir = -1;
+  if (right) moveDir =  1;
 
-  for (const [key, cfg] of Object.entries(BINDINGS)) {
-    if (keysDown[key]) {
-      moveDir    += cfg.move;
-      wheelAngle += cfg.wheel;
-    }
-  }
-  if (keysDown['ArrowLeft'] || touch.left) {
-    moveDir    += BINDINGS['a'].move;
-    wheelAngle += BINDINGS['a'].wheel;
-  }
-  if (keysDown['ArrowRight'] || touch.right) {
-    moveDir    += BINDINGS['d'].move;
-    wheelAngle += BINDINGS['d'].wheel;
-  }
-
-  moveDir    = Math.max(-1, Math.min(1, moveDir));
-  wheelAngle = Math.max(-30, Math.min(30, wheelAngle));
-  return { gas, brake, moveDir, wheelAngle, nitro };
+  return { gas, brake, moveDir, left, right, nitro };
 }
 
 // Mobile touch
@@ -126,28 +114,29 @@ const camera = new THREE.PerspectiveCamera(60, RENDER_W / RENDER_H, 0.5, 1000);
 
 // ============================================================
 //  GAME OBJECTS
+//  Menu is created first so editor can share its SaveManager.
 // ============================================================
 const world   = new World(scene);
 const player  = new CarController(scene);
 const traffic = new TrafficManager(scene);
-const editor  = new CarEditor(scene, camera, canvas, renderer);
 
-// Attach custom group reference to player
+// Menu must come before editor so we can pass menu.saveManager
+const menu = new Menu(startGame, onGaragePreview);
+
+// Editor receives the shared SaveManager from Menu
+const editor = new CarEditor(scene, camera, renderer, menu.saveManager);
+
+// Attach default custom group to player
 player.attachCustomGroup(editor.getCustomCarGroup());
 
 // ============================================================
 //  CAMERA
-//  - Y and Z strictly locked to player offset (no speed zoom on Z)
-//  - X has subtle speed-proportional sine sway
-//  - FOV lerps from 60 (stopped) to 66 (max speed) — 10% boost
-//    When nitro active: FOV goes to baseFOV + 10 = 70
-//  - Z-axis quaternion roll when turning, lerps back to 0
 // ============================================================
 const CAM_DIST    = 7;
 const CAM_H       = 3;
 const CAM_FOV_MIN = 60;
-const CAM_FOV_MAX = 66;   // exactly 10% higher than base
-const CAM_FOV_NITRO = 70; // baseFOV + 10 when nitro active
+const CAM_FOV_MAX = 66;   // 10% higher than base at max speed
+const CAM_FOV_NITRO = 70;
 const MAX_SPEED   = 280;
 
 let camRoll = 0;
@@ -157,10 +146,9 @@ const _rollAxis = new THREE.Vector3(0, 0, 1);
 function updateCamera() {
   const speedRatio = player.absSpeed / MAX_SPEED;
 
-  // Subtle X-axis sine sway — speed-proportional, no Z zoom
+  // Subtle X-axis sine sway — speed-proportional, Z stays locked
   const sway = Math.sin(Date.now() * 0.005) * speedRatio * 0.5;
 
-  // Strictly locked Y and Z
   camera.position.x = player.posX + sway;
   camera.position.y = CAM_H;
   camera.position.z = player.posZ - CAM_DIST;
@@ -173,11 +161,9 @@ function updateCamera() {
     if (screenShake < 0.01) screenShake = 0;
   }
 
-  // Look slightly ahead
   camera.lookAt(player.posX, 1.2, player.posZ + 16);
 
-  // Smooth Z-roll when turning (simulate G-force / weight transfer)
-  // Camera rolls opposite to lateral direction for realistic feel
+  // Smooth Z-roll (G-force simulation)
   const targetRoll = -player.lateralDir * (Math.PI / 64);
   camRoll = THREE.MathUtils.lerp(camRoll, targetRoll, 0.1);
   if (Math.abs(camRoll) > 0.0001) {
@@ -185,7 +171,7 @@ function updateCamera() {
     camera.quaternion.multiply(_rollQ);
   }
 
-  // FOV: 10% speed boost normally, nitro adds extra
+  // FOV: +10% at max speed, extra for nitro
   const targetFov = player.nitroActive
     ? CAM_FOV_NITRO
     : CAM_FOV_MIN + speedRatio * (CAM_FOV_MAX - CAM_FOV_MIN);
@@ -199,7 +185,7 @@ function updateCamera() {
 function updateDemo(dt) {
   const t = performance.now() * 0.001;
   const weave = Math.sin(t * 0.4) * 0.3;
-  player.update(dt, { gas: true, brake: false, moveDir: weave, wheelAngle: weave * 15, nitro: false });
+  player.update(dt, { gas: true, brake: false, moveDir: weave, left: false, right: false, nitro: false });
 
   world.update(player.posZ);
   world.updateTheme(dt, renderer);
@@ -212,26 +198,55 @@ function updateDemo(dt) {
 }
 
 // ============================================================
-//  GARAGE TURNTABLE — 3D preview while in garage panel
+//  GARAGE TURNTABLE
 // ============================================================
-function onGaragePreview(theme, vehicleType, carColor) {
+function onGaragePreview(theme, vehicleType, carColor, carId) {
   currentTheme   = theme;
   currentVehicle = vehicleType || 'sports';
   currentCar     = carColor    || '#33cc55';
+  // Sync activeCarId from menu so garage shows the right car
+  activeCarId    = carId || null;
 
   world.setTheme(theme);
-  player.setVehicle(currentVehicle);
-  player.setColor(currentCar);
 
-  player.playerGroup.position.set(0, 0, 0);
-  player.playerGroup.rotation.set(0, 0, 0);
+  // Rebuild garage preview from the correct source
+  if (activeCarId) {
+    // Custom build: load from SaveManager into editor.customCarGroup, show it directly.
+    // Player group is hidden so only the editor's group is visible (no duplicates).
+    const saved = menu.saveManager.getCar(activeCarId);
+    if (saved) {
+      editor.importParts(saved.parts, saved.mainColor || currentCar);
+      editor.applyMainColor(currentCar);
+    }
+    editor.customCarGroup.position.set(0, 0, 0);
+    editor.customCarGroup.rotation.set(0, 0, 0);
+    editor.customCarGroup.visible = true;
+    player.playerGroup.visible = false;
+  } else {
+    // Stock: hide custom group, show player with correct vehicle
+    editor.customCarGroup.visible = false;
+    player.playerGroup.visible = true;
+    player.setVehicle(currentVehicle);
+    player.setColor(currentCar);
+    player.playerGroup.position.set(0, 0, 0);
+    player.playerGroup.rotation.set(0, 0, 0);
+  }
 
   state = 'garage';
 }
 
 function updateGarage(dt) {
-  player.playerGroup.rotation.y += 0.8 * dt;
-  player.tickAnimations();
+  // Spinning turntable — explicitly gated to GARAGE state
+  if (state === 'garage') {
+    if (activeCarId && editor.customCarGroup.visible) {
+      // Custom car: rotate the editor group directly
+      editor.customCarGroup.rotation.y += 0.8 * dt;
+    } else {
+      // Stock car: rotate the player group
+      player.playerGroup.rotation.y += 0.8 * dt;
+      player.tickAnimations();
+    }
+  }
 
   camera.position.set(0, 2, 5);
   camera.lookAt(0, 1, 0);
@@ -242,36 +257,37 @@ function updateGarage(dt) {
 // ============================================================
 //  EDITOR STATE
 // ============================================================
-function enterEditor() {
+
+/**
+ * @param {string|null} carId — null for a fresh build, string to edit existing
+ */
+function enterEditor(carId) {
   state = 'editor';
 
-  // Hide garage panel
+  // Track which car we're editing at the top level
+  activeCarId = carId || null;
+
   menu.hideGarage();
 
-  // Hide world elements during editing
   world.setVisibility(false);
   traffic.setVisibility(false);
   player.playerGroup.visible = false;
 
-  // Enter the editor
-  editor.enter(currentCar);
+  // Enter editor: loads carId data if provided, else fresh canvas
+  editor.enter(currentCar, carId);
 }
 
-function exitEditor() {
-  // Exit the editor
+function exitEditor(savedCarId) {
   editor.exit();
 
-  // Restore world visibility
   world.setVisibility(true);
   traffic.setVisibility(true);
   player.playerGroup.visible = true;
 
-  // Return to garage
-  state = 'garage';
-  menu.showGarage();
+  // Tell menu to return to custom gallery
+  menu.onEditorClosed(savedCarId);
 
-  // Re-set preview
-  onGaragePreview(currentTheme, currentVehicle, currentCar);
+  state = 'menu';
 }
 
 function updateEditor() {
@@ -289,7 +305,6 @@ traffic.onNearMiss = () => {
   score += bonus;
   screenShake = 0.35;
 
-  // Nitro gain from near-miss
   nitroLevel = Math.min(NITRO_MAX, nitroLevel + NITRO_GAIN_NEAR_MISS);
 
   dom.nearMiss.textContent = nearMissCombo > 1
@@ -298,7 +313,6 @@ traffic.onNearMiss = () => {
   dom.nearMiss.classList.add('show');
   setTimeout(() => dom.nearMiss.classList.remove('show'), 700);
 
-  // Combo display
   if (nearMissCombo > 1) {
     dom.comboDisplay.textContent = `COMBO x${nearMissCombo}`;
     dom.comboDisplay.classList.add('show');
@@ -309,13 +323,11 @@ traffic.onNearMiss = () => {
 //  NITRO SYSTEM
 // ============================================================
 function updateNitro(dt, input) {
-  // Gain nitro passively at top speed
   const speedRatio = player.absSpeed / MAX_SPEED;
   if (speedRatio > 0.9) {
     nitroLevel = Math.min(NITRO_MAX, nitroLevel + NITRO_GAIN_TOP_SPEED * dt);
   }
 
-  // Activate/deactivate nitro
   if (input.nitro && nitroLevel > 0) {
     player.nitroActive = true;
     nitroLevel = Math.max(0, nitroLevel - NITRO_DRAIN * dt);
@@ -323,7 +335,6 @@ function updateNitro(dt, input) {
     player.nitroActive = false;
   }
 
-  // Update nitro bar UI
   const pct = (nitroLevel / NITRO_MAX) * 100;
   dom.nitroFill.style.width = `${pct}%`;
   if (player.nitroActive) {
@@ -344,7 +355,7 @@ function triggerHitStop() {
 
 function updateHitStop(dt) {
   if (hitStopTimer > 0) {
-    hitStopTimer -= dt; // raw dt, not scaled
+    hitStopTimer -= dt;
     if (hitStopTimer <= 0) {
       hitStopTimer = 0;
       gameSpeed = 1;
@@ -359,7 +370,6 @@ function updateHUD() {
   dom.speedVal.textContent = Math.floor(player.absSpeed);
   dom.scoreVal.textContent = Math.floor(score);
 
-  // Fade combo display when timer expires
   if (nearMissTimer <= 0 && nearMissCombo === 0) {
     dom.comboDisplay.classList.remove('show');
   }
@@ -368,26 +378,44 @@ function updateHUD() {
 // ============================================================
 //  GAME FLOW
 // ============================================================
-function startGame(theme, carColor, vehicleType) {
+
+/**
+ * Called by Menu when the user clicks GO!
+ * @param {string}      theme
+ * @param {string}      carColor    — hex, 'rainbow', or 'galaxy'
+ * @param {string}      vehicleType — 'sports' | 'limo' | 'custom'
+ * @param {string|null} carId       — null = stock, string = custom build ID
+ */
+function startGame(theme, carColor, vehicleType, carId) {
   currentTheme   = theme;
   currentCar     = carColor    || '#33cc55';
   currentVehicle = vehicleType || 'sports';
+  activeCarId    = carId || null;
 
   dom.garagePanel.classList.remove('visible');
   dom.hud.style.display = 'block';
 
   world.setTheme(theme);
 
-  // Check if editor has custom parts — use custom car for gameplay
-  if (editor.hasCustomParts()) {
-    player.attachCustomGroup(editor.getCustomCarGroup());
-    player.useCustomCar();
-    // Apply main color to custom group colorable parts
-    editor.applyMainColor(currentCar);
+  if (activeCarId) {
+    // Custom build: import → clone into playerGroup → hide editor group
+    const saved = menu.saveManager.getCar(activeCarId);
+    if (saved) {
+      editor.importParts(saved.parts, saved.mainColor || currentCar);
+      editor.applyMainColor(currentCar);
+      editor.customCarGroup.visible = false; // avoid double-rendering
+      player.attachCustomGroup(editor.getCustomCarGroup());
+      player.useCustomCar();
+      player.playerGroup.visible = true;
+    }
   } else {
+    // Stock vehicle
+    editor.customCarGroup.visible = false;
     player.setVehicle(currentVehicle);
+    player.setColor(currentCar);
+    player.playerGroup.visible = true;
   }
-  player.setColor(currentCar);
+
   player.playerGroup.rotation.set(0, 0, 0);
 
   resetGame();
@@ -398,23 +426,32 @@ function retryGame() {
   dom.gameOver.style.display = 'none';
   dom.hud.style.display = 'block';
 
-  if (editor.hasCustomParts()) {
-    player.attachCustomGroup(editor.getCustomCarGroup());
-    player.useCustomCar();
-    editor.applyMainColor(currentCar);
+  if (activeCarId) {
+    const saved = menu.saveManager.getCar(activeCarId);
+    if (saved) {
+      editor.importParts(saved.parts, saved.mainColor || currentCar);
+      editor.applyMainColor(currentCar);
+      editor.customCarGroup.visible = false;
+      player.attachCustomGroup(editor.getCustomCarGroup());
+      player.useCustomCar();
+      player.playerGroup.visible = true;
+    }
   } else {
+    editor.customCarGroup.visible = false;
     player.setVehicle(currentVehicle);
+    player.setColor(currentCar);
+    player.playerGroup.visible = true;
   }
-  player.setColor(currentCar);
+
   player.playerGroup.rotation.set(0, 0, 0);
   resetGame();
   state = 'playing';
 }
 
 function goToMainMenu() {
-  dom.gameOver.style.display  = 'none';
+  dom.gameOver.style.display    = 'none';
   dom.pauseScreen.style.display = 'none';
-  dom.hud.style.display       = 'none';
+  dom.hud.style.display         = 'none';
   resetGame();
   state = 'menu';
   world.setTheme('day');
@@ -428,7 +465,7 @@ function pause() {
 
 function resume() {
   dom.pauseScreen.style.display = 'none';
-  clock.getDelta(); // flush dt accumulated during pause
+  clock.getDelta(); // flush accumulated dt during pause
   state = 'playing';
 }
 
@@ -441,12 +478,10 @@ function resetGame() {
   traffic.reset();
   world.reset();
 
-  // Reset nitro UI
   dom.nitroFill.style.width = '0%';
   dom.nitroFill.classList.remove('active');
   dom.comboDisplay.classList.remove('show');
 
-  // Snap camera behind car at highway start
   camera.position.set(player.posX, CAM_H, player.posZ - CAM_DIST);
   camera.lookAt(player.posX, 1.2, player.posZ + 16);
   camera.fov = CAM_FOV_MIN;
@@ -454,64 +489,26 @@ function resetGame() {
 }
 
 function crash() {
-  // Trigger hit-stop effect before transitioning to game over
   triggerHitStop();
 
-  // Delay game-over screen to let hit-stop play out
   setTimeout(() => {
     state = 'gameover';
-    dom.hud.style.display  = 'none';
+    dom.hud.style.display      = 'none';
     dom.gameOver.style.display = 'flex';
     dom.finalScore.textContent = Math.floor(score);
-    gameSpeed = 1;
+    gameSpeed    = 1;
     hitStopTimer = 0;
   }, 350);
 }
 
 // ============================================================
-//  SAVE / LOAD WIRING
-// ============================================================
-function handleSave(slotId) {
-  const saveData = {
-    carType: editor.hasCustomParts() ? 'custom' : currentVehicle,
-    mainColor: currentCar,
-    vehicleType: currentVehicle,
-    parts: editor.exportParts(),
-  };
-  menu.saveManager.saveToSlot(slotId, saveData);
-}
-
-function handleLoadSlot(slotId) {
-  const data = menu.saveManager.loadFromSlot(slotId);
-  if (!data) return;
-
-  // Restore vehicle/color
-  currentCar = data.mainColor || '#33cc55';
-  currentVehicle = data.vehicleType || 'sports';
-
-  // Restore custom parts
-  if (data.parts && data.parts.length > 0) {
-    editor.importParts(data.parts, currentCar);
-  }
-
-  // Update preview
-  player.setVehicle(currentVehicle);
-  player.setColor(currentCar);
-  player.playerGroup.position.set(0, 0, 0);
-  player.playerGroup.rotation.set(0, 0, 0);
-}
-
-// ============================================================
 //  MENU + BUTTON WIRING
 // ============================================================
-const menu = new Menu(startGame, onGaragePreview);
 
-// Wire up editor/save callbacks on Menu
+// Wire editor-open callback — receives carId (null = new build)
 menu.onEditorOpen = enterEditor;
-menu.onSave       = handleSave;
-menu.onLoadSlot   = handleLoadSlot;
 
-// Wire up editor done callback
+// Wire editor done callback — receives savedCarId from editor
 editor.onDone = exitEditor;
 
 document.getElementById('retry-btn').addEventListener('click', retryGame);
@@ -529,10 +526,7 @@ function animate() {
   requestAnimationFrame(animate);
   const rawDt = Math.min(clock.getDelta(), 0.05);
 
-  // Hit-stop timer runs on raw time
   updateHitStop(rawDt);
-
-  // Effective delta time (scaled by gameSpeed for hit-stop effect)
   const dt = rawDt * gameSpeed;
 
   if (state === 'menu') {
@@ -548,7 +542,6 @@ function animate() {
     const input = getInput();
     player.update(dt, input);
 
-    // Nitro system
     updateNitro(dt, input);
 
     const ms  = player.absSpeed / 3.6;
@@ -577,7 +570,7 @@ function animate() {
     updateHUD();
 
   } else if (state === 'paused') {
-    // Freeze — just render the current frame with no updates
+    // Frozen — render current frame only
   }
 
   renderer.render(scene, camera);

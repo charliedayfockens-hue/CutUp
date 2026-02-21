@@ -1006,3 +1006,241 @@ body {
   transition: opacity 0.1s;
 }
 #hit-stop-flash.active { opacity: 1; }
+
+/* ============================================================
+   BACK BUTTON (shared across new stages)
+   ============================================================ */
+.back-btn {
+  margin-top: 20px;
+  font-size: 12px;
+  padding: 8px 24px;
+  letter-spacing: 3px;
+  opacity: 0.75;
+}
+.back-btn:hover { opacity: 1; }
+
+/* ============================================================
+   STAGE: MODE SELECTION (Stock vs Custom)
+   ============================================================ */
+.mode-cards {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.mode-card {
+  width: 140px;
+  height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  background: rgba(0,255,0,0.05);
+  border: 2px solid rgba(0,255,0,0.25);
+  color: #dfd;
+  transition: background 0.18s, border-color 0.18s, transform 0.15s;
+}
+.mode-card:hover {
+  background: rgba(0,255,0,0.15);
+  border-color: rgba(0,255,0,0.6);
+  transform: translateY(-3px);
+}
+.mode-icon { font-size: 36px; }
+.mode-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #4f4;
+}
+.mode-desc {
+  font-size: 10px;
+  color: #6c6;
+  letter-spacing: 1px;
+}
+
+/* ============================================================
+   STAGE: STOCK VEHICLE GALLERY
+   ============================================================ */
+.stock-cards {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.stock-card {
+  width: 130px;
+  height: 130px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  background: rgba(0,255,0,0.05);
+  border: 2px solid rgba(0,255,0,0.25);
+  color: #dfd;
+  transition: background 0.18s, border-color 0.18s, transform 0.15s;
+}
+.stock-card:hover {
+  background: rgba(0,255,0,0.15);
+  border-color: rgba(0,255,0,0.6);
+  transform: translateY(-3px);
+}
+.stock-icon { font-size: 30px; }
+.stock-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #4f4;
+}
+.stock-desc {
+  font-size: 10px;
+  color: #6c6;
+  letter-spacing: 1px;
+}
+
+/* ============================================================
+   STAGE: CUSTOM CAR GALLERY
+   ============================================================ */
+#stage-custom {
+  max-height: 90vh;
+  width: min(520px, 96vw);
+}
+
+.new-build-btn {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 14px;
+  font-size: 15px;
+  padding: 12px 0;
+  letter-spacing: 5px;
+}
+
+/* Scrollable CSS Grid for build cards */
+.custom-car-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.custom-car-grid::-webkit-scrollbar { width: 5px; }
+.custom-car-grid::-webkit-scrollbar-track { background: transparent; }
+.custom-car-grid::-webkit-scrollbar-thumb { background: rgba(0,255,0,0.2); border-radius: 3px; }
+
+.custom-empty-hint {
+  font-size: 12px;
+  color: #6a6;
+  letter-spacing: 1px;
+  text-align: center;
+  margin: 12px 0;
+  line-height: 1.8;
+}
+
+/* ── Build Card ─────────────────────────────────────────── */
+.build-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,255,0,0.04);
+  border: 1px solid rgba(0,255,0,0.2);
+  overflow: hidden;
+  transition: border-color 0.18s, background 0.18s;
+}
+.build-card:hover {
+  background: rgba(0,255,0,0.08);
+  border-color: rgba(0,255,0,0.45);
+}
+
+/* Color swatch strip at top of card */
+.build-card-swatch {
+  width: 100%;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+/* Info section */
+.build-card-info {
+  padding: 8px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.build-card-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #dfd;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.build-card-meta {
+  font-size: 10px;
+  color: #6c6;
+  letter-spacing: 0.5px;
+}
+
+/* Action buttons row */
+.build-card-actions {
+  display: flex;
+  padding: 6px 8px 8px;
+  gap: 6px;
+}
+.build-card-btn {
+  flex: 1;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 0;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.15s, border-color 0.15s;
+}
+.build-card-btn.play {
+  background: rgba(0,255,0,0.12);
+  border-color: rgba(0,255,0,0.35);
+  color: #4f4;
+}
+.build-card-btn.play:hover {
+  background: rgba(0,255,0,0.25);
+  border-color: rgba(0,255,0,0.65);
+}
+.build-card-btn.edit {
+  background: rgba(0,180,255,0.08);
+  border-color: rgba(0,180,255,0.3);
+  color: #8df;
+}
+.build-card-btn.edit:hover {
+  background: rgba(0,180,255,0.18);
+  border-color: rgba(0,180,255,0.6);
+}
+.build-card-btn.delete {
+  background: rgba(255,60,60,0.08);
+  border-color: rgba(255,60,60,0.25);
+  color: #f88;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+}
+.build-card-btn.delete:hover {
+  background: rgba(255,60,60,0.2);
+  border-color: rgba(255,60,60,0.55);
+}
+
+/* ============================================================
+   EDITOR SAVE BUTTON (added inline to action row)
+   ============================================================ */
+.editor-action-btn:not(.danger) {
+  background: rgba(0,200,255,0.08);
+  border-color: rgba(0,200,255,0.3);
+  color: #8df;
+}
+.editor-action-btn:not(.danger):hover {
+  background: rgba(0,200,255,0.18);
+  border-color: rgba(0,200,255,0.6);
+}
